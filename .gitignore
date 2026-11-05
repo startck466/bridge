@@ -1,4 +1,6 @@
 scripts/data/*.tar.gz
+scripts/.hosts.json
+sub/
 *.bak
 *.bak-*
 __pycache__/

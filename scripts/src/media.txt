@@ -41,7 +41,6 @@ deezer.com
 tidal.com
 pandora.com
 last.fm
-music.apple.com
 
 # === 影视资讯 / 评分 ===
 imdb.com
@@ -59,3 +58,5 @@ gog.com
 itch.io
 
 # 最后更新：2026-11-05
+
+# 注：music.apple.com 归 apple（直连），不要放这里

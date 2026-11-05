@@ -1,6 +1,6 @@
 # bridge rule set: media
 # 国外流媒体 / 影音
-# count: 47 | generated: 2026-11-05
+# count: 46 | generated: 2026-11-05
 # DO NOT EDIT — 修改请改 scripts/src/media.txt 后重新构建
 payload:
   - '+.youtube.com'
@@ -38,7 +38,6 @@ payload:
   - '+.tidal.com'
   - '+.pandora.com'
   - '+.last.fm'
-  - '+.music.apple.com'
   - '+.imdb.com'
   - '+.rottentomatoes.com'
   - '+.letterboxd.com'

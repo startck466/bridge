@@ -216,6 +216,10 @@ def main():
 
     total = 0
     counts = {}
+    loaded = {}
+    notes = {}
+
+    # 第一遍：读取 + 清洗
     for name, desc in CATS:
         if name == 'cn':
             raw = load_txt(os.path.join(DATA, 'direct.txt'))
@@ -225,24 +229,49 @@ def main():
             source = 'src/%s.txt' % name
 
         cleaned = normalize(raw)
+        note = ''
         # 大清单做后缀归并，小清单不做（保持可读性）
         if name == 'cn':
             before = len(cleaned)
             cleaned = collapse_suffix(cleaned)
-            collapsed = before - len(cleaned)
-        else:
-            collapsed = 0
+            if before != len(cleaned):
+                note = '归并 -%d' % (before - len(cleaned))
+        loaded[name] = cleaned
+        notes[name] = (source, note)
+
+    # 第二遍：按优先级去重。排在前面的分类对同名域名拥有所有权，
+    # 后面的分类要剔除，否则高优先级会被低优先级的写法悄悄盖掉（曾经踩过）。
+    taken = set()
+    for name, _ in CATS:
+        before = loaded[name]
+        kept = [d for d in before if d not in taken]
+        dropped = len(before) - len(kept)
+        if dropped:
+            notes[name] = (notes[name][0],
+                           (notes[name][1] + '  ' if notes[name][1] else '')
+                           + '优先级去重 -%d' % dropped)
+        taken.update(kept)
+        loaded[name] = kept
+
+    # 第三遍：写文件
+    for name, desc in CATS:
+        cleaned = loaded[name]
+        source, note = notes[name]
 
         if not cleaned:
-            print('  %-12s  跳过（无数据）' % name)
+            # 空分类也必须输出文件：订阅配置会引用它，缺文件客户端拉取时报错
+            print('  %-12s  0 条（空，仍生成空规则集）' % name)
+            counts[name] = 0
+            if not stats_only:
+                write_ruleset(name, [], desc, today)
             continue
 
         counts[name] = len(cleaned)
         total += len(cleaned)
         if not stats_only:
             write_ruleset(name, cleaned, desc, today)
-        note = '  归并 -%d' % collapsed if collapsed else ''
-        print('  %-12s %7d 条   <- %s%s' % (name, len(cleaned), source, note))
+        print('  %-12s %7d 条   <- %s%s'
+              % (name, len(cleaned), source, ('  ' + note) if note else ''))
 
     print('-' * 56)
     print('  合计 %d 条（去重后）' % total)

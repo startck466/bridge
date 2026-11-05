@@ -88,7 +88,9 @@ bridge/
 ├── dist/
 │   └── flclash.yaml      订阅配置骨架（不含节点）
 └── scripts/
-    ├── build.py          构建脚本
+    ├── build.py          构建脚本：src/*.txt → rule/*.yaml
+    ├── make_sub.py       生成含节点的订阅配置（节点信息不入库）
+    ├── weekly.py         每周维护：拉上游 → 构建 → 部署 → 校验
     ├── src/              手工分类清单 ← 改这里
     │   ├── fix-direct.txt
     │   ├── fix-proxy.txt
@@ -114,14 +116,17 @@ python3 scripts/build.py
 
 ## 维护
 
-每周一次：
+每周一次，一条命令：
 
-1. 更新 `scripts/data/direct.txt`（公共库最新版）
-2. 复查修正层是否还有效（上游修好了就能删）
-3. 重新构建，提交
-4. 打 tag，例如 `v1.4`
+```bash
+python3 scripts/weekly.py
+```
 
-版本号：主版本表示逻辑或分类体系变更，次版本表示域名增删。
+它做四件事：拉取上游最新国内域名清单（行数骤降 20% 以上自动保留旧数据）、重新构建全部规则集、部署到分发节点、逐个校验 HTTP 200。
+
+加 `--github` 会顺带提交并推送本仓库。
+
+规则集文件本身带生成日期和条数，可直接比对版本差异。
 
 ## 免责
 
