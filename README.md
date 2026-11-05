@@ -8,6 +8,12 @@
 
 分流规则库。内核无关的部分是规则本身（域名清单），可以喂给 mihomo 系（FlClash / Clash Verge / Stash）、sing-box、Surge、Shadowrocket，或者直接当纯域名清单用。
 
+**最省事的一条**（mihomo 系整份配置，含 cn 全量；导入后只需填自己的节点）：
+
+```
+https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/clash-full.yaml
+```
+
 不是 geosite 的镜像，是**判定逻辑 + 可随时打补丁的修正层**。
 
 | 我要… | 去哪 |
