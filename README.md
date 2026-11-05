@@ -45,9 +45,27 @@ https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/clash.yaml
 
 导入后**必须做一步**：填你自己的节点。文件里 `proxies: []` 是空的，注释里给了两种填法（改 `proxy-providers` 指向你的机场订阅，或者手动写节点）。不填就是不代理，规则照常加载但不生效——这是刻意设计，不会静默走错。
 
+### 方式 1B：完整版（带 cn 全量，不依赖 GEOIP）
+
+同样是整份配置，但多挂一个 `cn` 规则集——**11 万条国内域名，域名级判直连**，不靠 IP 归属地猜：
+
+```
+https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/clash-full.yaml
+```
+
+什么时候该用它：
+
+- 客户端没内置 `GEOIP` 数据库，或数据库太旧（国内 IP 段变化后 `GEOIP,CN` 会漏判）
+- 遇到「国内站被判国外、绕一圈代理回来」这类问题，想用域名规则彻底钉死
+- 不想让规则依赖客户端自带的 geosite
+
+代价只有一个：首次启动多下一次 `rule/cn.yaml`（约 2.2MB），之后每 24 小时增量更新。规则本身仍然走远程 `rule-provider`，不写进模板文件，所以模板和精简版一样轻。
+
+> **`cn` 只出现在直连侧。** 11 万条国内域名如果混进代理集，等于把国内站全推去代理——正好和这个项目的用途相反。所以 `singbox-direct-full.json` / `list-direct-full.txt` / `domains-direct-full.txt` 都是**直连**集，代理集继续用精简版那几个文件。完整版的 `clash-full.yaml` 里 `cn` 也明确排在所有 `PROXY` 规则之后、`GEOIP,CN` 之前。
+
 ### 方式 2：只取规则片段，塞进你现有配置
 
-已经有配置、只想加规则的话，复制 [`export/providers.yaml`](export/providers.yaml) 的两段合并进去：
+已经有配置、只想加规则的话，复制 [`export/providers.yaml`](export/providers.yaml) 的两段合并进去（要带 cn 全量就用 [`export/providers-full.yaml`](export/providers-full.yaml)）：
 
 ```yaml
 rule-providers:
@@ -101,11 +119,12 @@ rules:
 
 | 软件 | 用哪个文件 | 说明 |
 |---|---|---|
-| **sing-box** | [`export/singbox-proxy.json`](export/singbox-proxy.json) · [`singbox-direct.json`](export/singbox-direct.json) | 标准 `rule_set`（version 3，`domain_suffix`），`format: "source"` 直接引用 |
-| **Surge / Shadowrocket / Stash** | [`export/list.txt`](export/list.txt) · [`list-direct.txt`](export/list-direct.txt) | `DOMAIN-SUFFIX` 行，用 `RULE-SET,<url>,<你的策略组>` 引用 |
+| **sing-box** | [`singbox-proxy.json`](export/singbox-proxy.json) · [`singbox-direct.json`](export/singbox-direct.json) | 标准 `rule_set`（version 3，`domain_suffix`），`format: "source"` 直接引用 |
+| **Surge / Shadowrocket / Stash** | [`list.txt`](export/list.txt) · [`list-direct.txt`](export/list-direct.txt) | `DOMAIN-SUFFIX` 行，用 `RULE-SET,<url>,<你的策略组>` 引用 |
 | **Clash（classical）** | 同上 `list.txt` | `behavior: classical` |
-| **任意其它** | [`export/domains.txt`](export/domains.txt) · [`domains-direct.txt`](export/domains-direct.txt) | 每行一个域名，喂给谁都能用 |
-| **v2ray / Xray 系** | [`export/domains.txt`](export/domains.txt) | 转成 `geosite` 格式或写进 `routing.rules[].domain` 的 `domain:` 数组 |
+| **任意其它** | [`domains.txt`](export/domains.txt) · [`domains-direct.txt`](export/domains-direct.txt) | 每行一个域名，喂给谁都能用 |
+| **v2ray / Xray 系** | [`domains.txt`](export/domains.txt) | 转成 `geosite` 格式或写进 `routing.rules[].domain` 的 `domain:` 数组 |
+| **上面这些要带 cn 全量** | `*-direct-full` 三个文件 | 只扩直连侧，约 11 万条，文件 1.4～3MB |
 
 sing-box 示例：
 
@@ -149,8 +168,15 @@ RULE-SET,https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/list.txt,P
 | `list-direct.txt` | `DOMAIN-SUFFIX` 列表，强制直连 | 42 |
 | `domains.txt` | 纯域名，走代理 | 281 |
 | `domains-direct.txt` | 纯域名，强制直连 | 42 |
+| `clash-full.yaml` | 同上完整模板，多挂 `cn` 规则集 | — |
+| `providers-full.yaml` | 同上片段，多挂 `cn` 规则集 | — |
+| `singbox-direct-full.json` | sing-box 直连集，含 cn 全量 | 109961 |
+| `list-direct-full.txt` | `DOMAIN-SUFFIX` 直连集，含 cn 全量 | 109961 |
+| `domains-direct-full.txt` | 纯域名直连集，含 cn 全量 | 109961 |
 
-**为什么不导出 `cn` 的 11 万条**：第三方客户端基本都自带 `GEOIP,CN` 和公共 geosite 兜底，再塞 11 万条只会拖慢加载。这里只导出「公共库判不对」的那部分——修正层 + 分类层，这才是 bridge 的价值所在。
+**精简版 vs 完整版**：精简版只导出「公共库判不对」的部分——修正层 + 分类层，共 323 条，靠客户端自带的 `GEOIP,CN` 兜底国内流量，加载快、内存小。完整版额外把 `cn` 的 11 万条域名也给你，完全不依赖 GEOIP 与 geosite，代价是多占十几 MB 内存和一次 2.2MB 下载。两种都在，按客户端能力选。
+
+`clash.yaml` 与 `clash-full.yaml` 里的 `cn` 都是远程 `rule-provider` 引用，不写进模板文件本身——所以两份模板体积几乎一样，只有规则判定多一层。
 
 ## 规则集
 
@@ -233,7 +259,12 @@ bridge/
 │   ├── list.txt
 │   ├── list-direct.txt
 │   ├── domains.txt
-│   └── domains-direct.txt
+│   ├── domains-direct.txt
+│   ├── clash-full.yaml            完整版：多挂 cn 规则集
+│   ├── providers-full.yaml
+│   ├── singbox-direct-full.json   含 cn 全量
+│   ├── list-direct-full.txt
+│   └── domains-direct-full.txt
 ├── sub/
 │   └── bridge.enc        订阅密文（AES-256-GCM，密钥不入库）
 ├── worker/
@@ -280,7 +311,7 @@ python3 scripts/weekly.py
 
 1. 从 jsDelivr 拉上游最新国内域名清单（多通道依次重试，行数骤降 20% 以上自动保留旧数据）
 2. 重新构建全部规则集（按优先级跨分类去重）
-3. 导出 `export/` 下的通用规则订阅（纯域名，无节点）
+3. 导出 `export/` 下的通用规则订阅（纯域名，无节点；精简版 + 含 cn 全量的完整版）
 4. 重新加密订阅配置（正文没变自动跳过，不产生无意义提交）
 5. 提交并推送到本仓库
 6. 刷新 jsDelivr 边缘缓存，逐个校验九个规则集返回 HTTP 200 且内容正确

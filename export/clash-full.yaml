@@ -1,0 +1,160 @@
+# ============================================================
+# bridge —— 分流规则模板（不含任何节点）· 完整版（含 cn 全量）
+# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
+# 说明: https://github.com/startck466/bridge
+# ============================================================
+#
+# 与 clash.yaml 的唯一区别：多一个 cn 规则集（约 11 万条国内域名），
+# 域名级判定直连，不依赖 GEOIP 数据库。适合客户端没有 GEOIP、
+# 或想完全绕开 IP 归属地判断的场景。代价是首次启动要多下一次 ~2.2MB。
+#
+# 想省内存/启动更快 → 用 clash.yaml（靠 GEOIP,CN 兜底）。
+#
+# ⚠️ 这个文件里没有节点。导入后你必须做一步：
+#
+#   方式 A（推荐，用你自己的机场订阅）——
+#     1. 解除下面 proxy-providers 的注释，把 url 换成你的订阅链接
+#     2. 解除 proxy-groups 里「use: [my-sub]」的注释
+#
+#   方式 B（手动填节点）——
+#     1. 在 proxies: 下面按 mihomo 格式写入你的节点
+#     2. 把节点名加进 proxy-groups → PROXY → proxies 列表
+#
+# 没填节点时：所有规则照常生效，但 PROXY 组只有 DIRECT，
+# 等于全部直连。这是刻意的——不填就不代理，不会静默走错。
+#
+# 核心用途：让 AI 服务（ChatGPT / Claude / Gemini / Grok 等）
+# 稳定走代理，同时国内站不被误判绕道。
+
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: true
+unified-delay: true
+tcp-concurrent: true
+find-process-mode: off
+global-client-fingerprint: chrome
+
+dns:
+  enable: true
+  ipv6: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "*.lan"
+    - "*.local"
+  default-nameserver:
+    - 223.5.5.5
+    - 119.29.29.29
+  nameserver:
+    - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+
+proxies: []   # ← 方式 B：把你的节点写在这里
+
+# proxy-providers:
+#   my-sub:
+#     type: http
+#     url: "https://你的机场订阅链接"
+#     interval: 3600
+#     path: ./providers/my-sub.yaml
+#     health-check:
+#       enable: true
+#       url: https://www.gstatic.com/generate_204
+#       interval: 300
+
+proxy-groups:
+  - name: "PROXY"
+    type: select
+    proxies:
+      - DIRECT
+#       - 你的节点名
+#     use:
+#       - my-sub
+
+rule-providers:
+  fix-proxy:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/fix-proxy.yaml"
+    path: ./ruleset/fix-proxy.yaml
+    interval: 86400
+  ai:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/ai.yaml"
+    path: ./ruleset/ai.yaml
+    interval: 86400
+  dev:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/dev.yaml"
+    path: ./ruleset/dev.yaml
+    interval: 86400
+  social:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/social.yaml"
+    path: ./ruleset/social.yaml
+    interval: 86400
+  media:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/media.yaml"
+    path: ./ruleset/media.yaml
+    interval: 86400
+  cloud:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/cloud.yaml"
+    path: ./ruleset/cloud.yaml
+    interval: 86400
+  fix-direct:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/fix-direct.yaml"
+    path: ./ruleset/fix-direct.yaml
+    interval: 86400
+  apple:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/apple.yaml"
+    path: ./ruleset/apple.yaml
+    interval: 86400
+  cn:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/cn.yaml"
+    path: ./ruleset/cn.yaml
+    interval: 86400
+
+rules:
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR6,fc00::/7,DIRECT,no-resolve
+  - IP-CIDR6,fe80::/10,DIRECT,no-resolve
+  - RULE-SET,fix-direct,DIRECT
+  - RULE-SET,apple,DIRECT
+  - RULE-SET,fix-proxy,PROXY
+  - RULE-SET,ai,PROXY
+  - RULE-SET,dev,PROXY
+  - RULE-SET,social,PROXY
+  - RULE-SET,media,PROXY
+  - RULE-SET,cloud,PROXY
+  # cn 全量兜底，排在所有 PROXY 之后、GEOIP 之前
+  - RULE-SET,cn,DIRECT
+  - GEOIP,CN,DIRECT
+  - MATCH,PROXY
+

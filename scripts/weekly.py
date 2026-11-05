@@ -35,6 +35,23 @@ RULE = os.path.join(BASE, 'rule')
 RULES = ['fix-direct', 'fix-proxy', 'ai', 'dev', 'social', 'media',
          'cloud', 'apple', 'cn']
 
+# export/ 下对外分发的文件，每周一并校验（首字节期望值）
+EXPORTS = [
+    ('clash.yaml', b'#'),
+    ('providers.yaml', b'#'),
+    ('singbox-proxy.json', b'{'),
+    ('singbox-direct.json', b'{'),
+    ('list.txt', b'#'),
+    ('list-direct.txt', b'#'),
+    ('domains.txt', b'#'),
+    ('domains-direct.txt', b'#'),
+    ('clash-full.yaml', b'#'),
+    ('providers-full.yaml', b'#'),
+    ('singbox-direct-full.json', b'{'),
+    ('list-direct-full.txt', b'#'),
+    ('domains-direct-full.txt', b'#'),
+]
+
 # 上游清单的多个通道，按顺序试
 UPSTREAM_MIRRORS = [
     'https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/direct-list.txt',
@@ -159,9 +176,16 @@ def step_push(gh):
 # ---------------------------------------------------------------- 4. 刷新 + 校验
 def step_verify(gh):
     base = gh['rule_base']
+    exp_base = base.replace('/rule', '/export')
     print('  jsDelivr 缓存刷新:')
     for name in RULES:
         purge = 'https://purge.jsdelivr.net/gh/%s@main/rule/%s.yaml' % (gh['repo'], name)
+        try:
+            http_get(purge, timeout=45)
+        except Exception:
+            pass
+    for name, _ in EXPORTS:
+        purge = 'https://purge.jsdelivr.net/gh/%s@main/export/%s' % (gh['repo'], name)
         try:
             http_get(purge, timeout=45)
         except Exception:
@@ -185,6 +209,21 @@ def step_verify(gh):
         except Exception as e:
             print('    %-12s 失败 %s' % (name, str(e)[:60]))
             bad += 1
+
+    print('  导出文件校验:')
+    for name, first in EXPORTS:
+        url = '%s/%s' % (exp_base, name)
+        try:
+            st, body = http_get(url)
+            good = (st == 200 and body.startswith(first) and len(body) > 100)
+            print('    %-24s HTTP=%s  %9s B  %s'
+                  % (name, st, len(body), 'OK' if good else '<<< 内容异常'))
+            ok += 1 if good else 0
+            bad += 0 if good else 1
+        except Exception as e:
+            print('    %-24s 失败 %s' % (name, str(e)[:60]))
+            bad += 1
+
     print('  校验: 成功 %d / 失败 %d' % (ok, bad))
     return bad == 0
 
@@ -210,7 +249,7 @@ def main():
     print('bridge weekly  %s' % datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))
     print('=' * 56)
 
-    print('\n[1/5] 拉取上游国内域名清单')
+    print('\n[1/6] 拉取上游国内域名清单')
     step_fetch()
 
     print('\n[2/6] 重建规则集')

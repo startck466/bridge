@@ -4,7 +4,7 @@
 #
 # 把 rule-providers 段合并进你现有配置的 rule-providers，
 # 把 rules 段按顺序插到你的 rules 里（GEOIP,CN 之前）。
-# 顺序不能变：fix-* 必须最前。
+# 顺序不能变：fix-* 必须最前，cn 必须排在所有 PROXY 规则之后。
 # ============================================================
 
 rule-providers:

@@ -8,19 +8,31 @@
 用法:
     python3 scripts/export.py
 
-输出:
+输出（精简版：只含「公共库判不对」的部分）:
     export/clash.yaml          mihomo 系（FlClash / Clash Verge / Stash）完整模板
     export/providers.yaml      可粘贴片段：只含 rule-providers + rules 顺序
     export/singbox-proxy.json  sing-box：该走代理的全部域名
     export/singbox-direct.json sing-box：该强制直连的域名（修正层）
-    export/surge.list          Surge / Shadowrocket / Stash：DOMAIN-SUFFIX 格式
+    export/list.txt            Surge / Shadowrocket / Stash：DOMAIN-SUFFIX（代理）
+    export/list-direct.txt     同上（强制直连）
     export/domains.txt         纯域名清单（该走代理），任何软件都能吃
     export/domains-direct.txt  纯域名清单（该强制直连）
 
+输出（完整版：额外含 cn 全量 11 万条，不依赖 GEOIP 也能判国内）:
+    export/clash-full.yaml            mihomo 完整模板 + cn rule-provider
+    export/providers-full.yaml        片段版 + cn rule-provider
+    export/singbox-direct-full.json   sing-box 直连集 = 修正层 + apple + cn 全量
+    export/list-direct-full.txt       classical 直连集全量
+    export/domains-direct-full.txt    纯域名直连集全量
+
 设计取舍:
-    - 不导出 cn 全量（11 万条）。第三方客户端已有 GEOIP,CN 与公共库兜底，
-      塞进去只会拖慢解析。本导出只负责「公共库判不对」的部分。
-    - 顺序即语义：fix-* 是修正层，必须排在任何分类之前。
+    - 精简版不导出 cn 全量：第三方客户端已有 GEOIP,CN 与公共库兜底，
+      塞进去只会拖慢解析。完整版给「想彻底不依赖 GEOIP」的人用。
+    - cn 在完整版里只并入**直连**侧。它属于兜底集，绝不能进代理集——
+      否则 11 万条国内域名会被判去代理，正好和本项目的用途相反。
+    - 顺序即语义：fix-* 是修正层，必须排在任何分类之前；
+      cn 排在全部代理分类之后、GEOIP,CN 之前（当前 cn 与代理分类零重叠，
+      构建时已按优先级剔重，放后面是双保险）。
 """
 
 import io
@@ -81,7 +93,8 @@ def uniq(seq):
 
 
 # --------------------------------------------------------------- clash 完整模板
-def write_clash(data, today):
+def write_clash(data, today, full=False):
+    name_out = 'clash-full.yaml' if full else 'clash.yaml'
     proxies_lines = []
     for name in PROXY_CATS:
         target = 'PROXY'
@@ -95,10 +108,17 @@ def write_clash(data, today):
 
     out = []
     out.append('# ============================================================')
-    out.append('# bridge —— 分流规则模板（不含任何节点）')
+    out.append('# bridge —— 分流规则模板（不含任何节点）%s' % ('· 完整版（含 cn 全量）' if full else ''))
     out.append('# 生成: %s   %s' % (today, SIGN))
     out.append('# 说明: https://github.com/%s' % REPO)
     out.append('# ============================================================')
+    if full:
+        out.append('#')
+        out.append('# 与 clash.yaml 的唯一区别：多一个 cn 规则集（约 11 万条国内域名），')
+        out.append('# 域名级判定直连，不依赖 GEOIP 数据库。适合客户端没有 GEOIP、')
+        out.append('# 或想完全绕开 IP 归属地判断的场景。代价是首次启动要多下一次 ~2.2MB。')
+        out.append('#')
+        out.append('# 想省内存/启动更快 → 用 clash.yaml（靠 GEOIP,CN 兜底）。')
     out.append('#')
     out.append('# ⚠️ 这个文件里没有节点。导入后你必须做一步：')
     out.append('#')
@@ -165,7 +185,7 @@ def write_clash(data, today):
     out.append('')
     out.append('rule-providers:')
     out.extend(proxies_lines)
-    for name in DIRECT_CATS:
+    for name in DIRECT_CATS + (['cn'] if full else []):
         out.append('  %s:' % name)
         out.append('    type: http')
         out.append('    behavior: domain')
@@ -185,29 +205,33 @@ def write_clash(data, today):
         out.append('  - RULE-SET,%s,DIRECT' % name)
     for name in PROXY_CATS:
         out.append('  - RULE-SET,%s,PROXY' % name)
+    if full:
+        out.append('  # cn 全量兜底，排在所有 PROXY 之后、GEOIP 之前')
+        out.append('  - RULE-SET,cn,DIRECT')
     out.append('  - GEOIP,CN,DIRECT')
     out.append('  - MATCH,PROXY')
     out.append('')
 
-    p = os.path.join(OUT, 'clash.yaml')
+    p = os.path.join(OUT, name_out)
     io.open(p, 'w', encoding='utf-8', newline='\n').write('\n'.join(out) + '\n')
     return p
 
 
 # --------------------------------------------------------------- providers 片段
-def write_providers(data, today):
+def write_providers(data, today, full=False):
+    name_out = 'providers-full.yaml' if full else 'providers.yaml'
     out = []
     out.append('# ============================================================')
-    out.append('# bridge —— 可粘贴片段（不含任何节点）')
+    out.append('# bridge —— 可粘贴片段（不含任何节点）%s' % ('· 完整版（含 cn）' if full else ''))
     out.append('# 生成: %s   %s' % (today, SIGN))
     out.append('#')
     out.append('# 把 rule-providers 段合并进你现有配置的 rule-providers，')
     out.append('# 把 rules 段按顺序插到你的 rules 里（GEOIP,CN 之前）。')
-    out.append('# 顺序不能变：fix-* 必须最前。')
+    out.append('# 顺序不能变：fix-* 必须最前，cn 必须排在所有 PROXY 规则之后。')
     out.append('# ============================================================')
     out.append('')
     out.append('rule-providers:')
-    for name in PROXY_CATS + DIRECT_CATS:
+    for name in PROXY_CATS + DIRECT_CATS + (['cn'] if full else []):
         out.append('  %s:' % name)
         out.append('    type: http')
         out.append('    behavior: domain')
@@ -221,9 +245,11 @@ def write_providers(data, today):
         out.append('  - RULE-SET,%s,DIRECT' % name)
     for name in PROXY_CATS:
         out.append('  - RULE-SET,%s,PROXY' % name)
+    if full:
+        out.append('  - RULE-SET,cn,DIRECT')
     out.append('')
 
-    p = os.path.join(OUT, 'providers.yaml')
+    p = os.path.join(OUT, name_out)
     io.open(p, 'w', encoding='utf-8', newline='\n').write('\n'.join(out) + '\n')
     return p
 
@@ -279,9 +305,12 @@ def main():
         os.makedirs(OUT)
 
     data = load_all()
+    cn = parse_ruleset('cn')
 
     proxy = uniq([d for n in PROXY_CATS for d in data[n]])
     direct = uniq([d for n in DIRECT_CATS for d in data[n]])
+    # 完整版的直连侧：修正层 + apple + cn 全量（cn 在后，重叠时前者优先）
+    direct_full = uniq(direct + cn)
 
     p1 = write_clash(data, today)
     p2 = write_providers(data, today)
@@ -292,13 +321,26 @@ def main():
     p6 = write_plain(proxy, 'domains.txt', '该走代理的域名清单', today)
     p7 = write_plain(direct, 'domains-direct.txt', '该强制直连的域名清单', today)
 
+    pf1 = write_clash(data, today, full=True)
+    pf2 = write_providers(data, today, full=True)
+    pf3, nf3 = write_singbox(direct_full, 'singbox-direct-full.json', today)
+    pf4 = write_classical(direct_full, 'list-direct-full.txt',
+                          '该强制直连的域名（classical 规则集，含 cn 全量）', today)
+    pf5 = write_plain(direct_full, 'domains-direct-full.txt',
+                      '该强制直连的域名清单（含 cn 全量）', today)
+
     print('=' * 56)
     print('bridge export  %s' % today)
     print('=' * 56)
-    print('  代理域名 %d 条 / 直连域名 %d 条' % (len(proxy), len(direct)))
+    print('  代理域名 %d 条 / 直连域名 %d 条 / 直连全量 %d 条'
+          % (len(proxy), len(direct), len(direct_full)))
     for p, n in ((p1, ''), (p2, ''), (p3, n3), (p4, n4),
                  (p5, len(proxy)), (p5b, len(direct)),
                  (p6, len(proxy)), (p7, len(direct))):
+        print('  %-28s %s' % (os.path.relpath(p, BASE), n))
+    print('  --- 完整版（含 cn %d 条）---' % len(cn))
+    for p, n in ((pf1, ''), (pf2, ''), (pf3, nf3),
+                 (pf4, len(direct_full)), (pf5, len(direct_full))):
         print('  %-28s %s' % (os.path.relpath(p, BASE), n))
     print()
     return True
