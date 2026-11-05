@@ -1,0 +1,52 @@
+# 修正层：该直连却被误判为代理的域名
+#
+# 这类域名通常有三个特征之一：
+#   1. 国内主体运营，但域名后缀是 .com/.net
+#   2. 国内网站买了海外 CDN，IP 落在境外
+#   3. 公共规则库未收录，GEOIP 判不出来
+#
+# 每条请注明原因和日期，方便后续复查是否还有必要
+# 最后更新：2026-11-05
+
+# === 考试 / 政务（走代理会触发风控或直接打不开）===
+# 国考、省考报名系统，必须直连
+gwy.cpta.com.cn
+cpta.com.cn
+bm.scs.gov.cn
+scs.gov.cn
+jshrss.jiangsu.gov.cn
+jszxb.gov.cn
+rsj.beijing.gov.cn
+rsj.sh.gov.cn
+hrss.gd.gov.cn
+rst.zj.gov.cn
+
+# === 教育资源（教学备课高频）===
+# 学科网、题库、教务系统
+zxxk.com
+xkw.com
+jyeoo.com
+zujuan.com
+21cnjy.com
+jiaoyu.taobao.com
+chaoxing.com
+xuetangx.com
+icourse163.org
+
+# === 考公培训（粉笔等，接口需国内 IP）===
+fenbi.com
+offcn.com
+huatu.com
+zgjsks.com
+
+# === 国内常用但域名不带 .cn ===
+# 这些走 GEOIP 一般能判对，放这里是为了确定性
+12306.cn
+qunar.com
+ctrip.com
+meituan.com
+dianping.com
+ele.me
+didiglobal.com
+
+# 最后更新：2026-11-05

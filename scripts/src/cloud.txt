@@ -1,0 +1,58 @@
+# 国外云服务 / 基础设施 / 运维工具
+# 最后更新：2026-11-05
+
+# === CDN / 网络基础设施 ===
+cloudflare.com
+cloudflare-dns.com
+cloudflareclient.com
+workers.dev
+pages.dev
+fastly.com
+fastly.net
+akamai.com
+akamaized.net
+akamaihd.net
+
+# === 公有云 ===
+aws.amazon.com
+amazonaws.com
+cloudfront.net
+cloud.google.com
+digitalocean.com
+linode.com
+vultr.com
+hetzner.com
+ovh.com
+scaleway.com
+upcloud.com
+ionos.com
+
+# === 域名 / DNS ===
+namecheap.com
+godaddy.com
+namesilo.com
+dnsimple.com
+dynadot.com
+porkbun.com
+ns1.com
+
+# === 监控 / 日志 ===
+datadoghq.com
+newrelic.com
+grafana.com
+grafana.net
+splunk.com
+elastic.co
+pagerduty.com
+uptimerobot.com
+statuspage.io
+
+# === 安全 / 认证 ===
+auth0.com
+okta.com
+1password.com
+lastpass.com
+bitwarden.com
+cloudflareaccess.com
+
+# 最后更新：2026-11-05

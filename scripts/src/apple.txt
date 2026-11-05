@@ -1,0 +1,20 @@
+# 苹果服务 —— 国内 CDN 完善，直连通常比代理快
+#
+# 例外：App Store 外区、iCloud 海外账号的某些接口可能需要代理，
+# 但主体服务直连体验更好，整体归入直连
+# 最后更新：2026-11-05
+
+apple.com
+icloud.com
+icloud-content.com
+cdn-apple.com
+mzstatic.com
+apple-cloudkit.com
+itunes.com
+appstore.com
+me.com
+mac.com
+aaplimg.com
+apple-dns.net
+
+# 最后更新：2026-11-05

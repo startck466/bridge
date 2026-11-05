@@ -1,0 +1,61 @@
+# 国外流媒体 / 影音 / 娱乐
+# 最后更新：2026-11-05
+
+# === 视频 ===
+youtube.com
+youtu.be
+ytimg.com
+googlevideo.com
+yt3.ggpht.com
+vimeo.com
+dailymotion.com
+twitch.tv
+ttvnw.net
+rumble.com
+bitchute.com
+odysee.com
+
+# === 流媒体平台 ===
+netflix.com
+nflxvideo.net
+nflxso.net
+nflximg.net
+hulu.com
+disneyplus.com
+disney.com
+hbomax.com
+max.com
+primevideo.com
+peacocktv.com
+paramountplus.com
+crunchyroll.com
+funimation.com
+
+# === 音乐 ===
+spotify.com
+scdn.co
+spotifycdn.com
+soundcloud.com
+bandcamp.com
+deezer.com
+tidal.com
+pandora.com
+last.fm
+music.apple.com
+
+# === 影视资讯 / 评分 ===
+imdb.com
+rottentomatoes.com
+letterboxd.com
+themoviedb.org
+trakt.tv
+
+# === 游戏平台（国际版）===
+steampowered.com
+steamcommunity.com
+epicgames.com
+battle.net
+gog.com
+itch.io
+
+# 最后更新：2026-11-05

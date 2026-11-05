@@ -1,0 +1,87 @@
+# AI 服务 —— 客户端只需走代理，出口由服务器侧二次分流
+# 格式：一行一个域名，不带 +. 前缀（构建时统一处理）
+# 修改请同时更新末尾的日期
+
+# === OpenAI ===
+openai.com
+chatgpt.com
+oaistatic.com
+oaiusercontent.com
+sora.com
+openai.azure.com
+
+# === Anthropic ===
+anthropic.com
+claude.ai
+claudeusercontent.com
+
+# === Google / Gemini ===
+gemini.google.com
+aistudio.google.com
+generativelanguage.googleapis.com
+makersuite.google.com
+deepmind.com
+deepmind.google
+
+# === xAI ===
+x.ai
+grok.com
+
+# === 其他对话类 ===
+perplexity.ai
+poe.com
+character.ai
+character.ai
+pi.ai
+inflection.ai
+mistral.ai
+cohere.com
+cohere.ai
+groq.com
+together.ai
+openrouter.ai
+
+# === 图像 / 视频生成 ===
+midjourney.com
+stability.ai
+runwayml.com
+runway.com
+elevenlabs.io
+suno.com
+udio.com
+luma.ai
+lumalabs.ai
+fal.ai
+replicate.com
+civitai.com
+lexica.art
+krea.ai
+ideogram.ai
+recraft.ai
+playground.com
+
+# === 模型仓库 / 社区 ===
+huggingface.co
+hf.co
+modelscope.ai
+
+# === AI 编程 ===
+cursor.com
+cursor.sh
+v0.dev
+lovable.dev
+bolt.new
+windsurf.com
+codeium.com
+tabnine.com
+
+# === AI 办公 / 写作 ===
+gamma.app
+jasper.ai
+copy.ai
+writesonic.com
+notion.ai
+otter.ai
+fireflies.ai
+
+# 最后更新：2026-11-05

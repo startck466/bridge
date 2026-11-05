@@ -1,0 +1,4 @@
+scripts/data/*.tar.gz
+*.bak
+*.bak-*
+__pycache__/

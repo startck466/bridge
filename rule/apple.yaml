@@ -1,0 +1,17 @@
+# bridge rule set: apple
+# 苹果服务
+# count: 12 | generated: 2026-11-05
+# DO NOT EDIT — 修改请改 scripts/src/apple.txt 后重新构建
+payload:
+  - '+.apple.com'
+  - '+.icloud.com'
+  - '+.icloud-content.com'
+  - '+.cdn-apple.com'
+  - '+.mzstatic.com'
+  - '+.apple-cloudkit.com'
+  - '+.itunes.com'
+  - '+.appstore.com'
+  - '+.me.com'
+  - '+.mac.com'
+  - '+.aaplimg.com'
+  - '+.apple-dns.net'

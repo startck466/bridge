@@ -1,0 +1,64 @@
+# 国外社交 / 即时通讯 / 论坛
+# 最后更新：2026-11-05
+
+# === X / Twitter ===
+twitter.com
+x.com
+t.co
+twimg.com
+
+# === Meta ===
+facebook.com
+fb.com
+fbcdn.net
+fbsbx.com
+instagram.com
+cdninstagram.com
+threads.net
+threads.com
+
+# === 即时通讯 ===
+whatsapp.com
+whatsapp.net
+messenger.com
+telegram.org
+t.me
+telegram.me
+tdesktop.com
+signal.org
+
+# === 论坛 / 社区 ===
+reddit.com
+redd.it
+redditmedia.com
+redditstatic.com
+discord.com
+discordapp.com
+discordapp.net
+discord.gg
+quora.com
+medium.com
+substack.com
+disqus.com
+
+# === 职场 / 博客 ===
+linkedin.com
+licdn.com
+wordpress.com
+blogger.com
+ghost.io
+
+# === 图片社交 ===
+pinterest.com
+pinimg.com
+tumblr.com
+snapchat.com
+flickr.com
+
+# === 去中心化社交 ===
+mastodon.social
+mastodon.online
+bsky.app
+bsky.social
+
+# 最后更新：2026-11-05
