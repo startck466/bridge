@@ -25,38 +25,43 @@ bridge 的做法是：基础池保证不漏，**修正层保证不错**。任何
 | `rule/ai.yaml` | 63 | PROXY |
 | `rule/dev.yaml` | 82 | PROXY |
 | `rule/social.yaml` | 46 | PROXY |
-| `rule/media.yaml` | 47 | PROXY |
+| `rule/media.yaml` | 46 | PROXY |
 | `rule/cloud.yaml` | 44 | PROXY |
 | `rule/apple.yaml` | 12 | DIRECT |
-| `rule/cn.yaml` | 109940 | DIRECT |
+| `rule/cn.yaml` | 109919 | DIRECT |
 
-合计 110264 条。`cn` 走全量兜底，分类层负责精细判定，修正层拥有最高否决权。
+合计 110242 条。`cn` 走全量兜底，分类层负责精细判定，修正层拥有最高否决权。
 
 ## 怎么用
 
-**方式一：订阅（推荐）**
+规则集通过 **jsDelivr** 分发，国内可直连，无需任何自建服务：
 
-订阅地址由维护者提供（含节点信息，不放在公开仓库）。客户端每天自动拉取规则更新。
+```
+https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/<名称>.yaml
+```
 
-**方式二：手动接入自己的配置**
+> 注意：`cdn.jsdelivr.net` 与 `raw.githubusercontent.com` 在国内均被 DNS 污染，必须用 `fastly` / `gcore` / `testingcf` 子域。当前使用 `fastly`，失效时换另外两个即可。
 
-把 `dist/flclash.yaml` 里的 `rule-providers` 段复制到你自己的配置文件，`user` 替换成这个仓库的 owner：
+把下面这段放进你自己的配置，节点由你自己填：
 
 ```yaml
 rule-providers:
-  cn:
+  fix-direct:
     type: http
     behavior: domain
     format: yaml
-    url: "https://raw.githubusercontent.com/<OWNER>/bridge/main/rule/cn.yaml"
-    path: ./ruleset/cn.yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/fix-direct.yaml"
+    path: ./ruleset/fix-direct.yaml
     interval: 86400
-```
+  # ... 其余八个同理，文件名替换即可
 
-然后在 `rules:` 里按顺序引用，顺序不能变：
-
-```yaml
 rules:
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR6,fc00::/7,DIRECT,no-resolve
+  - IP-CIDR6,fe80::/10,DIRECT,no-resolve
   - RULE-SET,fix-direct,DIRECT
   - RULE-SET,fix-proxy,PROXY
   - RULE-SET,ai,PROXY
@@ -69,6 +74,10 @@ rules:
   - GEOIP,CN,DIRECT
   - MATCH,PROXY
 ```
+
+顺序不能变，`fix-*` 必须最前，`cn` 必须在最后。
+
+`interval: 86400` 表示客户端每 24 小时自动刷新一次规则，**不需要任何手动操作**。拉取失败时沿用本地缓存，不会导致配置失效。
 
 ## 目录结构
 
@@ -85,12 +94,10 @@ bridge/
 │   ├── cloud.yaml
 │   ├── apple.yaml
 │   └── cn.yaml
-├── dist/
-│   └── flclash.yaml      订阅配置骨架（不含节点）
 └── scripts/
     ├── build.py          构建脚本：src/*.txt → rule/*.yaml
     ├── make_sub.py       生成含节点的订阅配置（节点信息不入库）
-    ├── weekly.py         每周维护：拉上游 → 构建 → 部署 → 校验
+    ├── weekly.py         每周维护：拉上游 → 构建 → 推送 → 刷缓存 → 校验
     ├── src/              手工分类清单 ← 改这里
     │   ├── fix-direct.txt
     │   ├── fix-proxy.txt
@@ -101,7 +108,7 @@ bridge/
     │   ├── cloud.txt
     │   └── apple.txt
     └── data/
-        └── direct.txt    国内全量域名（公共库清洗后）
+        └── direct.txt    国内全量域名（每周下载，不入库）
 ```
 
 ## 怎么改
@@ -122,11 +129,16 @@ python3 scripts/build.py
 python3 scripts/weekly.py
 ```
 
-它做四件事：拉取上游最新国内域名清单（行数骤降 20% 以上自动保留旧数据）、重新构建全部规则集、部署到分发节点、逐个校验 HTTP 200。
+它做四件事：
 
-加 `--github` 会顺带提交并推送本仓库。
+1. 从 jsDelivr 拉上游最新国内域名清单（多通道依次重试，行数骤降 20% 以上自动保留旧数据）
+2. 重新构建全部规则集（按优先级跨分类去重）
+3. 提交并推送到本仓库
+4. 刷新 jsDelivr 边缘缓存，逐个校验九个规则集返回 HTTP 200 且内容正确
 
-规则集文件本身带生成日期和条数，可直接比对版本差异。
+加 `--no-push` 只本地重建，不推 GitHub。
+
+凭据放 `scripts/.hosts.json`，已被 `.gitignore` 排除，**不得入库**。
 
 ## 免责
 
