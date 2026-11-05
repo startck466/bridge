@@ -2,4 +2,4 @@
 # 修正层：该代理却被误判为直连
 # count: 0 | generated: 2026-11-05
 # DO NOT EDIT — 修改请改 scripts/src/fix-proxy.txt 后重新构建
-payload:
+payload: []

@@ -110,10 +110,14 @@ def write_ruleset(name, domains, desc, today):
         '# %s' % desc,
         '# count: %d | generated: %s' % (len(domains), today),
         '# DO NOT EDIT — 修改请改 scripts/src/%s.txt 后重新构建' % name,
-        'payload:',
     ]
-    for d in domains:
-        lines.append("  - '+.%s'" % d)
+    if domains:
+        lines.append('payload:')
+        for d in domains:
+            lines.append("  - '+.%s'" % d)
+    else:
+        # 必须显式写空数组，写成 'payload:' 会被解析成 null，mihomo 加载时报错
+        lines.append('payload: []')
     with io.open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
     return path, len(domains)

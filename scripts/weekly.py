@@ -53,18 +53,31 @@ def ssh(conf):
     return j
 
 
-def run(j, script, timeout=600):
+def run(j, script, timeout=300):
+    """执行远程脚本。
+
+    必须一直读到 EOF，不能"进程退出就停"——退出瞬间缓冲区里常常还有
+    数据没读完，那样会把输出的最后几行（正好是校验结论）截掉。
+    """
     chan = j.get_transport().open_session()
+    chan.settimeout(timeout)
     chan.exec_command('bash -s')
     chan.sendall(script.encode())
     chan.shutdown_write()
     out = b''
     while True:
-        if chan.recv_ready():
-            out += chan.recv(65536)
-        if chan.exit_status_ready() and not chan.recv_ready():
+        try:
+            data = chan.recv(65536)
+        except Exception:
             break
-    return out.decode('utf-8', 'replace'), chan.recv_exit_status()
+        if not data:
+            break
+        out += data
+    try:
+        rc = chan.recv_exit_status()
+    except Exception:
+        rc = -1
+    return out.decode('utf-8', 'replace'), rc
 
 
 def step_fetch(conf):
