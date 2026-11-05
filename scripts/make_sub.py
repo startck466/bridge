@@ -31,7 +31,7 @@ def load_nodes():
         nodes = _json.load(f).get('nodes_yaml')
     if not nodes or '- name:' not in nodes:
         sys.exit('.hosts.json 缺 nodes_yaml')
-    return nodes
+    return '\n' + nodes.lstrip('\n')
 
 
 RULES_BLOCK = '''rules:
