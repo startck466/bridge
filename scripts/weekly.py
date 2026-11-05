@@ -175,6 +175,18 @@ def step_verify(gh):
     return bad == 0
 
 
+def step_seal():
+    """重新加密订阅（节点或配置结构变化时才有实质改动）。"""
+    r = subprocess.run([sys.executable, os.path.join(BASE, 'scripts', 'seal_sub.py')],
+                       cwd=BASE, capture_output=True)
+    txt = (r.stdout or b'').decode('utf-8', 'replace') + (r.stderr or b'').decode('utf-8', 'replace')
+    print('\n'.join('  ' + l for l in txt.strip().splitlines()[:6]))
+    if r.returncode != 0:
+        print('  !! 订阅加密失败，本次沿用旧密文（不影响规则集）')
+        return False
+    return True
+
+
 def main():
     do_push = '--no-push' not in sys.argv
     conf = load_conf()
@@ -184,20 +196,23 @@ def main():
     print('bridge weekly  %s' % datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))
     print('=' * 56)
 
-    print('\n[1/4] 拉取上游国内域名清单')
+    print('\n[1/5] 拉取上游国内域名清单')
     step_fetch()
 
-    print('\n[2/4] 重建规则集')
+    print('\n[2/5] 重建规则集')
     step_build()
+
+    print('\n[3/5] 加密订阅（AES-256-GCM）')
+    step_seal()
 
     pushed = False
     if do_push:
-        print('\n[3/4] 推送 GitHub')
+        print('\n[4/5] 推送 GitHub')
         pushed = step_push(gh)
     else:
-        print('\n[3/4] 跳过推送（--no-push）')
+        print('\n[4/5] 跳过推送（--no-push）')
 
-    print('\n[4/4] 刷新缓存并校验')
+    print('\n[5/5] 刷新缓存并校验')
     ok = step_verify(gh)
 
     print('\n结果: %s' % ('全部正常' if ok else '存在失败，需人工检查'))

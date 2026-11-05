@@ -65,14 +65,42 @@ def seal(plain, key):
     return '%s\n%s\n' % (MAGIC, base64.b64encode(blob).decode('ascii'))
 
 
+def unseal(sealed, key):
+    lines = sealed.strip().splitlines()
+    if len(lines) < 2 or lines[0].strip() != MAGIC:
+        raise ValueError('密文信封格式不对')
+    blob = base64.b64decode(lines[1].strip())
+    return AESGCM(key).decrypt(blob[:12], blob[12:], MAGIC.encode('ascii')).decode('utf-8')
+
+
+def body_of(text):
+    """去掉前几行注释（生成时间每次不同），只比正文。"""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines) and (lines[i].startswith('#') or not lines[i].strip()):
+        i += 1
+    return '\n'.join(lines[i:])
+
+
 def main():
     hosts, key = load_creds()
     base = (hosts.get('github') or {}).get('rule_base') or DEFAULT_BASE
 
-    plain = build_config(base)
+    fresh = build_config(base)
+
+    # 幂等：正文没变就不重写，避免每周产生无意义的密文 diff
+    if os.path.isfile(OUT) and '--force' not in sys.argv:
+        try:
+            with io.open(OUT, encoding='utf-8') as f:
+                old_plain = unseal(f.read(), key)
+            if body_of(old_plain) == body_of(fresh):
+                print('SKIP  正文未变，密文保持原样（%s）' % OUT)
+                return
+        except Exception as e:
+            print('WARN  旧密文无法解析（%s），按新内容重写' % str(e)[:60])
 
     stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    plain = plain.replace(
+    plain = fresh.replace(
         '# 生成时间: %s' % datetime.date.today().isoformat(),
         '# 生成时间: %s' % stamp, 1)
 
