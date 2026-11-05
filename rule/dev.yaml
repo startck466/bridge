@@ -1,6 +1,6 @@
 # bridge rule set: dev
 # 开发者服务
-# count: 82 | generated: 2026-11-05
+# count: 82 | generated: 2026-11-06
 # DO NOT EDIT — 修改请改 scripts/src/dev.txt 后重新构建
 payload:
   - '+.github.com'

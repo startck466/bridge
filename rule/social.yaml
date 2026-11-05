@@ -1,6 +1,6 @@
 # bridge rule set: social
 # 国外社交 / 即时通讯
-# count: 46 | generated: 2026-11-05
+# count: 46 | generated: 2026-11-06
 # DO NOT EDIT — 修改请改 scripts/src/social.txt 后重新构建
 payload:
   - '+.twitter.com'
