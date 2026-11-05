@@ -1,0 +1,77 @@
+# ============================================================
+# bridge —— 可粘贴片段（不含任何节点）
+# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
+#
+# 把 rule-providers 段合并进你现有配置的 rule-providers，
+# 把 rules 段按顺序插到你的 rules 里（GEOIP,CN 之前）。
+# 顺序不能变：fix-* 必须最前。
+# ============================================================
+
+rule-providers:
+  fix-proxy:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/fix-proxy.yaml"
+    path: ./ruleset/bridge-fix-proxy.yaml
+    interval: 86400
+  ai:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/ai.yaml"
+    path: ./ruleset/bridge-ai.yaml
+    interval: 86400
+  dev:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/dev.yaml"
+    path: ./ruleset/bridge-dev.yaml
+    interval: 86400
+  social:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/social.yaml"
+    path: ./ruleset/bridge-social.yaml
+    interval: 86400
+  media:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/media.yaml"
+    path: ./ruleset/bridge-media.yaml
+    interval: 86400
+  cloud:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/cloud.yaml"
+    path: ./ruleset/bridge-cloud.yaml
+    interval: 86400
+  fix-direct:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/fix-direct.yaml"
+    path: ./ruleset/bridge-fix-direct.yaml
+    interval: 86400
+  apple:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/apple.yaml"
+    path: ./ruleset/bridge-apple.yaml
+    interval: 86400
+
+rules:
+  - RULE-SET,fix-direct,DIRECT
+  - RULE-SET,apple,DIRECT
+  - RULE-SET,fix-proxy,PROXY
+  - RULE-SET,ai,PROXY
+  - RULE-SET,dev,PROXY
+  - RULE-SET,social,PROXY
+  - RULE-SET,media,PROXY
+  - RULE-SET,cloud,PROXY
+

@@ -1,8 +1,20 @@
 # bridge
 
-分流规则库。给 mihomo 内核的客户端用（FlClash / Stash / Clash Verge）。
+**给任何 VPN / 代理客户端用的分流规则订阅。不含任何节点、密码、UUID 或订阅令牌——纯规则，随便取用。**
+
+> 这份规则的核心用途是**定向让 AI 服务走代理**：ChatGPT、Claude、Gemini、Grok、Perplexity、Cursor、HuggingFace 这些站，在国内要么直连不通、要么被降智或风控，bridge 把 63 个 AI 域名单独归成一层，命中就走代理，不受其它分类干扰。同时它也解决国内站被误判绕道的问题。
+>
+> **由卡戎（AI 小黑猫）维护。** 每周自动重建一次，域名清单持续增补。
+
+分流规则库。内核无关的部分是规则本身（域名清单），可以喂给 mihomo 系（FlClash / Clash Verge / Stash）、sing-box、Surge、Shadowrocket，或者直接当纯域名清单用。
 
 不是 geosite 的镜像，是**判定逻辑 + 可随时打补丁的修正层**。
+
+| 我要… | 去哪 |
+|---|---|
+| 直接拿现成的规则订阅链接，导入就行 | [→ 规则订阅（不含节点）](#规则订阅不含节点推荐先看这个) |
+| 看规则怎么判断的 | [RULES.md](RULES.md) |
+| 要带我节点的完整配置 | 那是私有的一份，见下文[订阅（含节点）](#订阅含节点加密托管)，不在公开仓库 |
 
 ## 它解决什么问题
 
@@ -15,6 +27,129 @@
 bridge 的做法是：基础池保证不漏，**修正层保证不错**。任何一条判错都能被单独纠正，不影响其他。
 
 详细判断逻辑见 [RULES.md](RULES.md)。
+
+## 规则订阅（不含节点）
+
+**这一节是给别人的——里面没有任何节点。** 你只需要自己准备代理客户端和节点，规则用这里的。
+
+所有链接都走 jsDelivr 的 `fastly` 子域（国内可直连）。每 24 小时自动更新一次，你不用管。
+
+### 方式 1：整份配置（最省事）
+
+mihomo 内核通用（FlClash / Clash Verge / Clash Meta / Stash）：
+
+```
+https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/clash.yaml
+```
+
+导入后**必须做一步**：填你自己的节点。文件里 `proxies: []` 是空的，注释里给了两种填法（改 `proxy-providers` 指向你的机场订阅，或者手动写节点）。不填就是不代理，规则照常加载但不生效——这是刻意设计，不会静默走错。
+
+### 方式 2：只取规则片段，塞进你现有配置
+
+已经有配置、只想加规则的话，复制 [`export/providers.yaml`](export/providers.yaml) 的两段合并进去：
+
+```yaml
+rule-providers:
+  ai:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/ai.yaml"
+    path: ./ruleset/bridge-ai.yaml
+    interval: 86400
+  # ... 其余七个同理
+
+rules:
+  - RULE-SET,fix-direct,DIRECT    # 修正层，必须最前
+  - RULE-SET,fix-proxy,PROXY
+  - RULE-SET,ai,PROXY             # ← AI 走代理就在这一行
+  - RULE-SET,dev,PROXY
+  - RULE-SET,social,PROXY
+  - RULE-SET,media,PROXY
+  - RULE-SET,cloud,PROXY
+  - RULE-SET,apple,DIRECT
+  - GEOIP,CN,DIRECT
+  - MATCH,PROXY
+```
+
+**顺序不能变**，`fix-direct` 必须在最前（它有否决权）。
+
+### 方式 3：只用 AI 那一层
+
+只想要「AI 走代理、其它别管」的最小配置：
+
+```yaml
+rule-providers:
+  ai:
+    type: http
+    behavior: domain
+    format: yaml
+    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/ai.yaml"
+    path: ./ruleset/bridge-ai.yaml
+    interval: 86400
+
+rules:
+  - RULE-SET,ai,PROXY
+  - GEOIP,CN,DIRECT
+  - MATCH,DIRECT
+```
+
+63 个 AI 域名，覆盖各家大模型、AI 编程、AI 绘图/音频/视频、模型托管。
+
+### 方式 4：其它软件
+
+| 软件 | 用哪个文件 | 说明 |
+|---|---|---|
+| **sing-box** | [`export/singbox-proxy.json`](export/singbox-proxy.json) · [`singbox-direct.json`](export/singbox-direct.json) | 标准 `rule_set`（version 3，`domain_suffix`），`format: "source"` 直接引用 |
+| **Surge / Shadowrocket / Stash** | [`export/list.txt`](export/list.txt) · [`list-direct.txt`](export/list-direct.txt) | `DOMAIN-SUFFIX` 行，用 `RULE-SET,<url>,<你的策略组>` 引用 |
+| **Clash（classical）** | 同上 `list.txt` | `behavior: classical` |
+| **任意其它** | [`export/domains.txt`](export/domains.txt) · [`domains-direct.txt`](export/domains-direct.txt) | 每行一个域名，喂给谁都能用 |
+| **v2ray / Xray 系** | [`export/domains.txt`](export/domains.txt) | 转成 `geosite` 格式或写进 `routing.rules[].domain` 的 `domain:` 数组 |
+
+sing-box 示例：
+
+```json
+{
+  "rule_set": [
+    {
+      "type": "remote",
+      "tag": "bridge-ai",
+      "format": "source",
+      "url": "https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/singbox-proxy.json",
+      "download_detour": "proxy",
+      "update_interval": "24h"
+    }
+  ],
+  "rules": [
+    { "rule_set": "bridge-ai", "outbound": "proxy" }
+  ]
+}
+```
+
+Surge 示例：
+
+```
+RULE-SET,https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/list.txt,PROXY
+```
+
+> `PROXY` 换成你自己配置里的策略组名。
+
+### 导出文件一览
+
+`export/` 下全部由 `scripts/export.py` 生成，**只有域名，无任何凭据**：
+
+| 文件 | 内容 | 条数 |
+|---|---|---|
+| `clash.yaml` | mihomo 完整配置模板（节点留空） | — |
+| `providers.yaml` | 可粘贴的 rule-providers + rules 片段 | — |
+| `singbox-proxy.json` | sing-box `rule_set`，走代理 | 281 |
+| `singbox-direct.json` | sing-box `rule_set`，强制直连 | 42 |
+| `list.txt` | `DOMAIN-SUFFIX` 列表，走代理 | 281 |
+| `list-direct.txt` | `DOMAIN-SUFFIX` 列表，强制直连 | 42 |
+| `domains.txt` | 纯域名，走代理 | 281 |
+| `domains-direct.txt` | 纯域名，强制直连 | 42 |
+
+**为什么不导出 `cn` 的 11 万条**：第三方客户端基本都自带 `GEOIP,CN` 和公共 geosite 兜底，再塞 11 万条只会拖慢加载。这里只导出「公共库判不对」的那部分——修正层 + 分类层，这才是 bridge 的价值所在。
 
 ## 规则集
 
@@ -62,7 +197,7 @@ python3 scripts/seal_sub.py     # 正文没变会自动 SKIP
 python3 worker/deploy.py        # 脚本有改动时重新部署
 ```
 
-## 怎么用
+## 分发方式
 
 规则集通过 **jsDelivr** 分发，国内可直连，无需任何自建服务：
 
@@ -71,41 +206,6 @@ https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/<名称>.yaml
 ```
 
 > 注意：`cdn.jsdelivr.net` 与 `raw.githubusercontent.com` 在国内均被 DNS 污染，必须用 `fastly` / `gcore` / `testingcf` 子域。当前使用 `fastly`，失效时换另外两个即可。
-
-把下面这段放进你自己的配置，节点由你自己填：
-
-```yaml
-rule-providers:
-  fix-direct:
-    type: http
-    behavior: domain
-    format: yaml
-    url: "https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule/fix-direct.yaml"
-    path: ./ruleset/fix-direct.yaml
-    interval: 86400
-  # ... 其余八个同理，文件名替换即可
-
-rules:
-  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
-  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
-  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
-  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
-  - IP-CIDR6,fc00::/7,DIRECT,no-resolve
-  - IP-CIDR6,fe80::/10,DIRECT,no-resolve
-  - RULE-SET,fix-direct,DIRECT
-  - RULE-SET,fix-proxy,PROXY
-  - RULE-SET,ai,PROXY
-  - RULE-SET,dev,PROXY
-  - RULE-SET,social,PROXY
-  - RULE-SET,media,PROXY
-  - RULE-SET,cloud,PROXY
-  - RULE-SET,apple,DIRECT
-  - RULE-SET,cn,DIRECT
-  - GEOIP,CN,DIRECT
-  - MATCH,PROXY
-```
-
-顺序不能变，`fix-*` 必须最前，`cn` 必须在最后。
 
 `interval: 86400` 表示客户端每 24 小时自动刷新一次规则，**不需要任何手动操作**。拉取失败时沿用本地缓存，不会导致配置失效。
 
@@ -124,6 +224,15 @@ bridge/
 │   ├── cloud.yaml
 │   ├── apple.yaml
 │   └── cn.yaml
+├── export/               给其它客户端的规则订阅（纯域名，无凭据）
+│   ├── clash.yaml
+│   ├── providers.yaml
+│   ├── singbox-proxy.json
+│   ├── singbox-direct.json
+│   ├── list.txt
+│   ├── list-direct.txt
+│   ├── domains.txt
+│   └── domains-direct.txt
 ├── sub/
 │   └── bridge.enc        订阅密文（AES-256-GCM，密钥不入库）
 ├── worker/
@@ -131,9 +240,10 @@ bridge/
 │   └── deploy.py         部署 / 更新 Worker + 绑域名
 └── scripts/
     ├── build.py          构建脚本：src/*.txt → rule/*.yaml
+    ├── export.py         导出通用规则订阅 → export/
     ├── make_sub.py       生成含节点的订阅配置（节点信息不入库）
     ├── seal_sub.py       订阅配置 AES-256-GCM 加密 → sub/bridge.enc
-    ├── weekly.py         每周维护：拉上游 → 构建 → 加密 → 推送 → 刷缓存 → 校验
+    ├── weekly.py         每周维护：拉上游 → 构建 → 导出 → 加密 → 推送 → 刷缓存 → 校验
     ├── src/              手工分类清单 ← 改这里
     │   ├── fix-direct.txt
     │   ├── fix-proxy.txt
@@ -165,18 +275,29 @@ python3 scripts/build.py
 python3 scripts/weekly.py
 ```
 
-它做五件事：
+它做六件事：
 
 1. 从 jsDelivr 拉上游最新国内域名清单（多通道依次重试，行数骤降 20% 以上自动保留旧数据）
 2. 重新构建全部规则集（按优先级跨分类去重）
-3. 重新加密订阅配置（正文没变自动跳过，不产生无意义提交）
-4. 提交并推送到本仓库
-5. 刷新 jsDelivr 边缘缓存，逐个校验九个规则集返回 HTTP 200 且内容正确
+3. 导出 `export/` 下的通用规则订阅（纯域名，无节点）
+4. 重新加密订阅配置（正文没变自动跳过，不产生无意义提交）
+5. 提交并推送到本仓库
+6. 刷新 jsDelivr 边缘缓存，逐个校验九个规则集返回 HTTP 200 且内容正确
 
 加 `--no-push` 只本地重建，不推 GitHub。
 
 凭据放 `scripts/.hosts.json`，已被 `.gitignore` 排除，**不得入库**。
 
+## 维护者
+
+规则由 **卡戎（AI 小黑猫）** 每周自动维护：拉上游、重建、校验、推送全程无人值守。
+
+判错、漏收、想加的站点，开 issue 说清楚「哪个域名 + 该直连还是该代理 + 为什么会判错」，下一轮就能进修正层。
+
+> 卡戎是柯一第一只猫的名字——一只黑色孟买猫，家里的老大。这个名字有意义，所以认真做事。
+
 ## 免责
 
 规则按实际使用体验持续调整，不保证覆盖所有场景。判错欢迎反馈。
+
+本仓库**不含任何节点、密码、UUID、订阅令牌或服务器信息**。所有规则是公开可查的域名清单，仅供分流判断使用。请自备节点。

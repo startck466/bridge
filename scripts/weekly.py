@@ -112,6 +112,20 @@ def step_build():
         sys.exit('构建失败：' + r.stderr.decode('utf-8', 'replace')[:400])
 
 
+def step_export():
+    """导出给其它客户端的规则订阅（纯域名，无节点）。"""
+    r = subprocess.run([sys.executable, os.path.join(BASE, 'scripts', 'export.py')],
+                       cwd=BASE, capture_output=True)
+    txt = r.stdout.decode('utf-8', 'replace')
+    lines = [l for l in txt.strip().splitlines() if l.strip()]
+    print('\n'.join('  ' + l for l in lines[-10:]))
+    if r.returncode != 0:
+        print('  !! 导出失败（不影响规则集，仅 export/ 未更新）：%s'
+              % r.stderr.decode('utf-8', 'replace')[:200])
+        return False
+    return True
+
+
 # ---------------------------------------------------------------- 3. 推送
 def step_push(gh):
     repo = gh['repo']
@@ -199,20 +213,23 @@ def main():
     print('\n[1/5] 拉取上游国内域名清单')
     step_fetch()
 
-    print('\n[2/5] 重建规则集')
+    print('\n[2/6] 重建规则集')
     step_build()
 
-    print('\n[3/5] 加密订阅（AES-256-GCM）')
+    print('\n[3/6] 导出通用规则订阅（不含节点）')
+    step_export()
+
+    print('\n[4/6] 加密订阅（AES-256-GCM）')
     step_seal()
 
     pushed = False
     if do_push:
-        print('\n[4/5] 推送 GitHub')
+        print('\n[5/6] 推送 GitHub')
         pushed = step_push(gh)
     else:
-        print('\n[4/5] 跳过推送（--no-push）')
+        print('\n[5/6] 跳过推送（--no-push）')
 
-    print('\n[5/5] 刷新缓存并校验')
+    print('\n[6/6] 刷新缓存并校验')
     ok = step_verify(gh)
 
     print('\n结果: %s' % ('全部正常' if ok else '存在失败，需人工检查'))

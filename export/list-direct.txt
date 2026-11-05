@@ -1,0 +1,47 @@
+# bridge —— 该强制直连的域名（classical 规则集）
+# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
+# 格式: DOMAIN-SUFFIX，不含策略名，策略在使用处指定
+# Clash 引用时 behavior 用 classical；Surge 用 RULE-SET
+DOMAIN-SUFFIX,gwy.cpta.com.cn
+DOMAIN-SUFFIX,cpta.com.cn
+DOMAIN-SUFFIX,bm.scs.gov.cn
+DOMAIN-SUFFIX,scs.gov.cn
+DOMAIN-SUFFIX,jshrss.jiangsu.gov.cn
+DOMAIN-SUFFIX,jszxb.gov.cn
+DOMAIN-SUFFIX,rsj.beijing.gov.cn
+DOMAIN-SUFFIX,rsj.sh.gov.cn
+DOMAIN-SUFFIX,hrss.gd.gov.cn
+DOMAIN-SUFFIX,rst.zj.gov.cn
+DOMAIN-SUFFIX,zxxk.com
+DOMAIN-SUFFIX,xkw.com
+DOMAIN-SUFFIX,jyeoo.com
+DOMAIN-SUFFIX,zujuan.com
+DOMAIN-SUFFIX,21cnjy.com
+DOMAIN-SUFFIX,jiaoyu.taobao.com
+DOMAIN-SUFFIX,chaoxing.com
+DOMAIN-SUFFIX,xuetangx.com
+DOMAIN-SUFFIX,icourse163.org
+DOMAIN-SUFFIX,fenbi.com
+DOMAIN-SUFFIX,offcn.com
+DOMAIN-SUFFIX,huatu.com
+DOMAIN-SUFFIX,zgjsks.com
+DOMAIN-SUFFIX,12306.cn
+DOMAIN-SUFFIX,qunar.com
+DOMAIN-SUFFIX,ctrip.com
+DOMAIN-SUFFIX,meituan.com
+DOMAIN-SUFFIX,dianping.com
+DOMAIN-SUFFIX,ele.me
+DOMAIN-SUFFIX,didiglobal.com
+DOMAIN-SUFFIX,apple.com
+DOMAIN-SUFFIX,icloud.com
+DOMAIN-SUFFIX,icloud-content.com
+DOMAIN-SUFFIX,cdn-apple.com
+DOMAIN-SUFFIX,mzstatic.com
+DOMAIN-SUFFIX,apple-cloudkit.com
+DOMAIN-SUFFIX,itunes.com
+DOMAIN-SUFFIX,appstore.com
+DOMAIN-SUFFIX,me.com
+DOMAIN-SUFFIX,mac.com
+DOMAIN-SUFFIX,aaplimg.com
+DOMAIN-SUFFIX,apple-dns.net
+
