@@ -3,18 +3,20 @@
 """bridge 每周维护
 
 流程:
-  1. 经香港服务器拉取上游国内域名清单（本机直连 GitHub 不通）
+  1. 拉取上游国内域名清单（走 jsDelivr，不碰香港服务器）
   2. 重建全部规则集
-  3. 上传到服务器规则分发目录
-  4. 重新生成订阅配置并上传
-  5. 全量校验（每个规则集必须 200）
-  6. 若提供了 --github，则尝试推送 GitHub（失败不中断）
+  3. 推送 GitHub（startck466/bridge）
+  4. 刷新 jsDelivr 边缘缓存并逐项校验
+
+客户端（FlClash / mihomo）通过 jsDelivr 拉规则集，24 小时自动刷新一次。
+
+服务器不再参与任何规则分发，仅作为拉取上游失败时的兜底通道。
 
 用法:
-    python3 scripts/weekly.py            # 只更新服务器
-    python3 scripts/weekly.py --github   # 同时尝试推 GitHub
+    python3 scripts/weekly.py            # 完整流程
+    python3 scripts/weekly.py --no-push  # 只本地重建，不推 GitHub
 
-服务器凭据从 scripts/.hosts.json 读取（已 gitignore，不入库）
+GitHub 凭据从 scripts/.hosts.json 读取（已 gitignore，不入库）
 """
 
 import io
@@ -23,100 +25,84 @@ import os
 import subprocess
 import sys
 import datetime
+import urllib.request
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONF = os.path.join(BASE, 'scripts', '.hosts.json')
 DATA = os.path.join(BASE, 'scripts', 'data')
 RULE = os.path.join(BASE, 'rule')
 
-UPSTREAM = {
-    'direct.txt':
-        'https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/direct-list.txt',
-}
-
 RULES = ['fix-direct', 'fix-proxy', 'ai', 'dev', 'social', 'media',
          'cloud', 'apple', 'cn']
+
+# 上游清单的多个通道，按顺序试
+UPSTREAM_MIRRORS = [
+    'https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/direct-list.txt',
+    'https://gcore.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/direct-list.txt',
+    'https://testingcf.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/direct-list.txt',
+    'https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/direct-list.txt',
+    'https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/direct-list.txt',
+]
 
 
 def load_conf():
     if not os.path.isfile(CONF):
-        sys.exit('缺少 %s（含服务器地址与凭据）' % CONF)
+        sys.exit('缺少 %s（含 GitHub 凭据）' % CONF)
     return json.load(io.open(CONF, encoding='utf-8'))
 
 
-def ssh(conf):
-    import paramiko
-    c = conf['server']
-    j = paramiko.SSHClient()
-    j.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    j.connect(c['host'], c.get('port', 22), c['user'], c['password'], timeout=25)
-    return j
+def http_get(url, timeout=90):
+    req = urllib.request.Request(url, headers={'User-Agent': 'bridge-weekly/1.0'})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.status, r.read()
 
 
-def run(j, script, timeout=300):
-    """执行远程脚本。
-
-    必须一直读到 EOF，不能"进程退出就停"——退出瞬间缓冲区里常常还有
-    数据没读完，那样会把输出的最后几行（正好是校验结论）截掉。
-    """
-    chan = j.get_transport().open_session()
-    chan.settimeout(timeout)
-    chan.exec_command('bash -s')
-    chan.sendall(script.encode())
-    chan.shutdown_write()
-    out = b''
-    while True:
-        try:
-            data = chan.recv(65536)
-        except Exception:
-            break
-        if not data:
-            break
-        out += data
-    try:
-        rc = chan.recv_exit_status()
-    except Exception:
-        rc = -1
-    return out.decode('utf-8', 'replace'), rc
-
-
-def step_fetch(conf):
-    """在服务器上拉上游清单，再取回本地（绕开本机网络限制）"""
-    j = ssh(conf)
-    cmds = []
-    for name, url in UPSTREAM.items():
-        cmds.append('curl -s --max-time 60 -o /root/_up_%s "%s" || echo FETCHFAIL:%s'
-                    % (name, url, name))
-        cmds.append('wc -l < /root/_up_%s' % name)
-    out, _ = run(j, '\n'.join(cmds))
-    lines = [l for l in out.splitlines() if l.strip()]
-    counts = [l for l in lines if l.strip().isdigit()]
-    print('  上游拉取:', ' '.join(lines[-len(UPSTREAM) * 2:])[:160])
-
+# ---------------------------------------------------------------- 1. 拉上游
+def step_fetch():
+    """下载上游国内域名清单。任一通道成功即止。"""
+    local = os.path.join(DATA, 'direct.txt')
     if not os.path.isdir(DATA):
         os.makedirs(DATA)
-    sftp = j.open_sftp()
-    for name in UPSTREAM:
-        local = os.path.join(DATA, name)
-        tmp = local + '.new'
-        sftp.get('/root/_up_' + name, tmp)
-        n = sum(1 for _ in io.open(tmp, encoding='utf-8', errors='replace'))
-        old = 0
+
+    body = None
+    for url in UPSTREAM_MIRRORS:
+        host = url.split('/')[2]
+        try:
+            st, body = http_get(url)
+            if st == 200 and len(body) > 500000:
+                print('  通道 %-24s OK  %.1f MB' % (host, len(body) / 1048576.0))
+                break
+            print('  通道 %-24s HTTP=%s 体积异常' % (host, st))
+            body = None
+        except Exception as e:
+            print('  通道 %-24s 失败 %s' % (host, str(e)[:60]))
+            body = None
+    if body is None:
         if os.path.isfile(local):
-            old = sum(1 for _ in io.open(local, encoding='utf-8', errors='replace'))
-        # 上游文件行数骤降 20% 以上视为异常，保留旧数据
-        if old and n < old * 0.8:
-            print('  !! %s 上游行数 %d → %d 降幅过大，保留旧数据' % (name, old, n))
-            os.remove(tmp)
-        else:
-            if os.path.exists(local):
-                os.remove(local)
-            os.rename(tmp, local)
-            print('  %s  %d 行（旧 %d）' % (name, n, old))
-    sftp.close()
-    j.close()
+            print('  !! 全部通道失败，沿用现有 direct.txt')
+            return
+        sys.exit('!! 上游不可达且本地无数据，中止')
+
+    tmp = local + '.new'
+    with io.open(tmp, 'wb') as f:
+        f.write(body)
+    n = sum(1 for _ in io.open(tmp, encoding='utf-8', errors='replace'))
+    old = 0
+    if os.path.isfile(local):
+        old = sum(1 for _ in io.open(local, encoding='utf-8', errors='replace'))
+
+    # 行数骤降 20% 以上视为上游异常，保留旧数据
+    if old and n < old * 0.8:
+        print('  !! 上游 %d 行 → %d 行，降幅过大，保留旧数据' % (old, n))
+        os.remove(tmp)
+    else:
+        if os.path.exists(local):
+            os.remove(local)
+        os.rename(tmp, local)
+        print('  direct.txt  %d 行（旧 %d，差 %+d）' % (n, old, n - old))
 
 
+# ---------------------------------------------------------------- 2. 构建
 def step_build():
     r = subprocess.run([sys.executable, os.path.join(BASE, 'scripts', 'build.py')],
                        cwd=BASE, capture_output=True)
@@ -126,76 +112,97 @@ def step_build():
         sys.exit('构建失败：' + r.stderr.decode('utf-8', 'replace')[:400])
 
 
-def step_deploy(conf, token, sub_token, rule_base):
-    j = ssh(conf)
-    out, _ = run(j, 'ls -d /root/bridge_http/%s /root/bridge_http_sub' % token)
-    if 'No such' in out:
-        sys.exit('服务器分发目录不存在，未部署过？')
+# ---------------------------------------------------------------- 3. 推送
+def step_push(gh):
+    repo = gh['repo']
+    subprocess.run(['git', 'add', '-A'], cwd=BASE, capture_output=True)
 
-    sftp = j.open_sftp()
-    remote = '/root/bridge_http/' + token
-    for name in RULES:
-        sftp.put(os.path.join(RULE, name + '.yaml'), remote + '/' + name + '.yaml')
+    diff = subprocess.run(['git', 'status', '--porcelain'], cwd=BASE,
+                          capture_output=True).stdout.decode('utf-8', 'replace')
+    if not diff.strip():
+        print('  无变动，跳过提交')
+        return False
 
-    # 订阅配置
-    sub_out = os.path.join(BASE, 'sub', 'bridge-sub.yaml')
-    r = subprocess.run([sys.executable, os.path.join(BASE, 'scripts', 'make_sub.py'),
-                        '--base=' + rule_base, '--out=' + sub_out],
+    msg = 'weekly: 规则更新 %s' % datetime.date.today().isoformat()
+    r = subprocess.run(['git', '-c', 'core.autocrlf=false', 'commit', '-m', msg],
                        cwd=BASE, capture_output=True)
     if r.returncode != 0:
-        sys.exit('订阅生成失败：' + r.stderr.decode('utf-8', 'replace')[:300])
-    sftp.put(sub_out, '/root/bridge_http_sub/bridge.yaml')
-    sftp.close()
+        print('  提交失败：', r.stderr.decode('utf-8', 'replace')[:200])
+        return False
 
-    # 全量校验
-    chk = ['T=%s' % token, 'S=%s' % sub_token, 'ok=0', 'bad=0']
-    for name in RULES + ['sub']:
-        if name == 'sub':
-            url = 'https://startck466.us.ci:9443/$S/bridge.yaml'
-        else:
-            url = 'https://startck466.us.ci:9443/$T/%s.yaml' % name
-        chk.append('c=$(curl -s -o /dev/null -w "%%{http_code}" --max-time 60 "%s")' % url)
-        chk.append('echo "  %-12s $c"' % name)
-        chk.append('if [ "$c" = "200" ]; then ok=$((ok+1)); else bad=$((bad+1)); fi')
-    chk.append('echo "校验: 成功 $ok / 失败 $bad"')
-    out, _ = run(j, '\n'.join(chk))
-    print(out.strip())
-    j.close()
-    return '失败 0' in out
+    tok = gh.get('token')
+    url = 'https://%s:%s@github.com/%s.git' % (gh['user'], tok, repo)
+    r = subprocess.run(['git', 'push', url, 'HEAD:main'],
+                       cwd=BASE, capture_output=True, timeout=300)
+    if r.returncode != 0:
+        err = r.stderr.decode('utf-8', 'replace').replace(tok, '***')
+        print('  推送失败：', err.strip()[-300:])
+        return False
+    print('  已推送 %s' % repo)
+    return True
+
+
+# ---------------------------------------------------------------- 4. 刷新 + 校验
+def step_verify(gh):
+    base = gh['rule_base']
+    print('  jsDelivr 缓存刷新:')
+    for name in RULES:
+        purge = 'https://purge.jsdelivr.net/gh/%s@main/rule/%s.yaml' % (gh['repo'], name)
+        try:
+            http_get(purge, timeout=45)
+        except Exception:
+            pass
+    print('  已完成')
+
+    print('  逐项校验:')
+    ok = bad = 0
+    for name in RULES:
+        url = '%s/%s.yaml' % (base, name)
+        try:
+            st, body = http_get(url)
+            head = body[:200].decode('utf-8', 'replace')
+            # 内容必须是我们生成的，不能是 CDN 错误页
+            good = (st == 200 and head.startswith('# bridge rule set'))
+            n = head.split('count: ')[1].split(' ')[0] if 'count: ' in head else '?'
+            print('    %-12s HTTP=%s  %7s B  count=%s  %s'
+                  % (name, st, len(body), n, 'OK' if good else '<<< 内容异常'))
+            ok += 1 if good else 0
+            bad += 0 if good else 1
+        except Exception as e:
+            print('    %-12s 失败 %s' % (name, str(e)[:60]))
+            bad += 1
+    print('  校验: 成功 %d / 失败 %d' % (ok, bad))
+    return bad == 0
 
 
 def main():
-    do_github = '--github' in sys.argv
+    do_push = '--no-push' not in sys.argv
     conf = load_conf()
-    sub = conf['dist']
+    gh = conf['github']
 
     print('=' * 56)
     print('bridge weekly  %s' % datetime.datetime.now().strftime('%Y-%m-%d %H:%M'))
     print('=' * 56)
 
-    print('\n[1/3] 拉取上游国内域名清单')
-    step_fetch(conf)
+    print('\n[1/4] 拉取上游国内域名清单')
+    step_fetch()
 
-    print('\n[2/3] 重建规则集')
+    print('\n[2/4] 重建规则集')
     step_build()
 
-    print('\n[3/3] 部署并校验')
-    ok = step_deploy(conf, sub['rule_token'], sub['sub_token'], sub['rule_base'])
-    print('\n分发结果: %s' % ('全部正常' if ok else '存在失败，需人工检查'))
+    pushed = False
+    if do_push:
+        print('\n[3/4] 推送 GitHub')
+        pushed = step_push(gh)
+    else:
+        print('\n[3/4] 跳过推送（--no-push）')
 
-    if do_github:
-        print('\n[附加] 推送 GitHub')
-        r = subprocess.run(['git', 'add', '-A'], cwd=BASE, capture_output=True)
-        r = subprocess.run(['git', 'commit', '-m', 'weekly: 规则更新 %s'
-                            % datetime.date.today().isoformat()],
-                           cwd=BASE, capture_output=True)
-        r = subprocess.run(['git', 'push', 'origin', 'HEAD:main'],
-                           cwd=BASE, capture_output=True)
-        if r.returncode == 0:
-            print('  GitHub 已更新')
-        else:
-            print('  GitHub 推送失败（不影响服务器分发）:',
-                  r.stderr.decode('utf-8', 'replace').strip()[:200])
+    print('\n[4/4] 刷新缓存并校验')
+    ok = step_verify(gh)
+
+    print('\n结果: %s' % ('全部正常' if ok else '存在失败，需人工检查'))
+    if not pushed and do_push:
+        print('注意: 本次没有新提交，线上规则未变化')
 
 
 if __name__ == '__main__':

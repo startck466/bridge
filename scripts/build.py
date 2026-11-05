@@ -13,7 +13,7 @@ bridge 规则库构建脚本
 
 输出:
     rule/*.yaml         mihomo rule-provider 格式
-    dist/flclash.yaml   FlClash 订阅配置（节点部分为占位符）
+    dist/flclash.yaml   FlClash 配置骨架（规则源指向 jsDelivr，节点留空）
 """
 
 import io
@@ -123,9 +123,11 @@ def write_ruleset(name, domains, desc, today):
     return path, len(domains)
 
 
-def build_subscription(cats_count, today, user='YOUR_GITHUB_USER', repo='bridge'):
-    """生成 FlClash 订阅配置骨架。节点部分故意留空，由私有配置注入"""
-    base = 'https://raw.githubusercontent.com/%s/%s/main/rule' % (user, repo)
+def build_subscription(cats_count, today, user='startck466', repo='bridge'):
+    """生成 FlClash 配置骨架。节点部分故意留空，由私有配置注入"""
+    # 国内访问必须走 jsDelivr 的 fastly 子域；cdn.jsdelivr.net 与
+    # raw.githubusercontent.com 均被 DNS 污染，直连不通。
+    base = 'https://fastly.jsdelivr.net/gh/%s/%s@main/rule' % (user, repo)
 
     providers = []
     order = [c for c, _ in CATS]
@@ -205,7 +207,7 @@ def build_subscription(cats_count, today, user='YOUR_GITHUB_USER', repo='bridge'
 def main():
     today = datetime.date.today().isoformat()
     stats_only = '--stats' in sys.argv
-    user = 'YOUR_GITHUB_USER'
+    user = 'startck466'
     for a in sys.argv:
         if a.startswith('--user='):
             user = a.split('=', 1)[1]

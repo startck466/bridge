@@ -1,6 +1,11 @@
-scripts/data/*.tar.gz
+# 凭据与本地产物，绝不入库
 scripts/.hosts.json
 sub/
+dist/
+
+# 上游下载的原始清单（每周重新拉取，无需版本管理）
+scripts/data/direct.txt
+
 *.bak
 *.bak-*
 __pycache__/
