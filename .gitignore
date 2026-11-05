@@ -1,6 +1,12 @@
-# 凭据与本地产物，绝不入库
+# 凭据与本地明文产物，绝不入库
 scripts/.hosts.json
-sub/
+
+# 订阅：只允许密文（sub/bridge.enc）入库，明文 yaml 绝不提交
+sub/*.yaml
+sub/*.yml
+sub/*.bak
+sub/*.txt
+
 dist/
 
 # 上游下载的原始清单（每周重新拉取，无需版本管理）
