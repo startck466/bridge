@@ -12,7 +12,8 @@
 
 | 我要… | 去哪 |
 |---|---|
-| **直接拿现成的规则订阅链接，导入就行** | [→ 规则订阅（不含节点）](#规则订阅不含节点) |
+| **直接拿现成的规则订阅链接，导入就行** | [→ 方式 1：`clash-full.yaml`](#方式-1整份配置最省事推荐这个) |
+| 客户端内存紧张，不想要 11 万条 cn | [→ 方式 1B：精简版](#方式-1b精简版不带-cn靠-geoip-兜底) |
 | 看规则怎么判断的 | [RULES.md](RULES.md) |
 | 只要 AI 走代理的最小配置 | [方式 3：只用 AI 那一层](#方式-3只用-ai-那一层) |
 | 要带我节点的完整配置 | 那是私有的一份，见 [订阅（含节点，加密托管）](#订阅含节点加密托管)，不在公开仓库 |
@@ -35,37 +36,43 @@ bridge 的做法是：基础池保证不漏，**修正层保证不错**。任何
 
 所有链接都走 jsDelivr 的 `fastly` 子域（国内可直连）。每 24 小时自动更新一次，你不用管。
 
-### 方式 1：整份配置（最省事）
+### 方式 1：整份配置（最省事，推荐这个）
 
 mihomo 内核通用（FlClash / Clash Verge / Clash Meta / Stash）：
-
-```
-https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/clash.yaml
-```
-
-导入后**必须做一步**：填你自己的节点。文件里 `proxies: []` 是空的，注释里给了两种填法（改 `proxy-providers` 指向你的机场订阅，或者手动写节点）。不填就是不代理，规则照常加载但不生效——这是刻意设计，不会静默走错。
-
-### 方式 1B：完整版（带 cn 全量，不依赖 GEOIP）
-
-同样是整份配置，但多挂一个 `cn` 规则集——**11 万条国内域名，域名级判直连**，不靠 IP 归属地猜：
 
 ```
 https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/clash-full.yaml
 ```
 
-什么时候该用它：
+这就是**默认推荐**的一份：修正层 + 六个分类层 + `cn` 全量直连，**11 万条国内域名按域名级判直连**，不靠 IP 归属地猜，也不依赖客户端自带的 geosite。国内站被误判绕道、AI 站被判直连打不开，这两类问题它都能兜住。
 
-- 客户端没内置 `GEOIP` 数据库，或数据库太旧（国内 IP 段变化后 `GEOIP,CN` 会漏判）
-- 遇到「国内站被判国外、绕一圈代理回来」这类问题，想用域名规则彻底钉死
-- 不想让规则依赖客户端自带的 geosite
+导入后**必须做一步**：填你自己的节点。文件里 `proxies: []` 是空的，注释里给了两种填法（改 `proxy-providers` 指向你的机场订阅，或者手动写节点）。不填就是不代理，规则照常加载但不生效——这是刻意设计，不会静默走错。
 
-代价只有一个：首次启动多下一次 `rule/cn.yaml`（约 2.2MB），之后每 24 小时增量更新。规则本身仍然走远程 `rule-provider`，不写进模板文件，所以模板和精简版一样轻。
+规则顺序是 `fix-direct` → `apple` → 六个 PROXY 分类 → **`cn,DIRECT`** → `GEOIP,CN` → `MATCH`。`cn` 明确排在所有 `PROXY` 规则之后、`GEOIP,CN` 之前，所以 AI 那一层永远优先。
 
-> **`cn` 只出现在直连侧。** 11 万条国内域名如果混进代理集，等于把国内站全推去代理——正好和这个项目的用途相反。所以 `singbox-direct-full.json` / `list-direct-full.txt` / `domains-direct-full.txt` 都是**直连**集，代理集继续用精简版那几个文件。完整版的 `clash-full.yaml` 里 `cn` 也明确排在所有 `PROXY` 规则之后、`GEOIP,CN` 之前。
+唯一的代价：首次启动多下一次 `rule/cn.yaml`（约 2.2MB），之后每 24 小时增量更新，多占十几 MB 内存。规则本身走远程 `rule-provider`，不写进模板文件，所以模板和精简版一样轻。
+
+### 方式 1B：精简版（不带 cn，靠 GEOIP 兜底）
+
+同样是整份配置，但不挂 `cn` 规则集，只靠客户端自带的 `GEOIP,CN` 判断国内流量：
+
+```
+https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/clash.yaml
+```
+
+适合这几种情况：
+
+- 客户端内存紧张（路由器、旧手机），十几 MB 的域名表确实吃不消
+- 客户端的 `GEOIP` 数据库很新，国内 IP 段覆盖完整
+- 只想先试试规则效果，不想一次拉 2.2MB
+
+代价是：`GEOIP,CN` 只能按 IP 归属地判，国内站用了海外 CDN 时仍可能被判成国外、绕一圈代理——这正是完整版用域名规则钉死的那类问题。
+
+> **`cn` 只出现在直连侧。** 11 万条国内域名如果混进代理集，等于把国内站全推去代理——正好和这个项目的用途相反。所以 `singbox-direct-full.json` / `list-direct-full.txt` / `domains-direct-full.txt` 都是**直连**集，代理集继续用精简版那几个文件。
 
 ### 方式 2：只取规则片段，塞进你现有配置
 
-已经有配置、只想加规则的话，复制 [`export/providers.yaml`](export/providers.yaml) 的两段合并进去（要带 cn 全量就用 [`export/providers-full.yaml`](export/providers-full.yaml)）：
+已经有配置、只想加规则的话，复制 [`export/providers-full.yaml`](export/providers-full.yaml) 的两段合并进去（不想带 cn 全量就用精简版 [`export/providers.yaml`](export/providers.yaml)）：
 
 ```yaml
 rule-providers:
@@ -124,32 +131,44 @@ rules:
 | **Clash（classical）** | 同上 `list.txt` | `behavior: classical` |
 | **任意其它** | [`domains.txt`](export/domains.txt) · [`domains-direct.txt`](export/domains-direct.txt) | 每行一个域名，喂给谁都能用 |
 | **v2ray / Xray 系** | [`domains.txt`](export/domains.txt) | 转成 `geosite` 格式或写进 `routing.rules[].domain` 的 `domain:` 数组 |
-| **上面这些要带 cn 全量** | `*-direct-full` 三个文件 | 只扩直连侧，约 11 万条，文件 1.4～3MB |
+| **上面这些建议配 cn 全量** | `*-direct-full` 三个文件 | 只扩直连侧，约 11 万条，文件 1.4～3MB |
 
-sing-box 示例：
+sing-box 示例（推荐组合：代理用精简集，直连用含 cn 全量的那份）：
 
 ```json
 {
   "rule_set": [
     {
       "type": "remote",
-      "tag": "bridge-ai",
+      "tag": "bridge-proxy",
       "format": "source",
       "url": "https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/singbox-proxy.json",
+      "download_detour": "proxy",
+      "update_interval": "24h"
+    },
+    {
+      "type": "remote",
+      "tag": "bridge-cn",
+      "format": "source",
+      "url": "https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/singbox-direct-full.json",
       "download_detour": "proxy",
       "update_interval": "24h"
     }
   ],
   "rules": [
-    { "rule_set": "bridge-ai", "outbound": "proxy" }
+    { "rule_set": "bridge-proxy", "outbound": "proxy" },
+    { "rule_set": "bridge-cn", "outbound": "direct" }
   ]
 }
 ```
 
-Surge 示例：
+**顺序不能反**：`bridge-proxy` 在前，`bridge-cn` 在后。反了就是把 AI 站也判成直连。
+
+Surge 示例（同样两条，代理精简 + 直连全量）：
 
 ```
 RULE-SET,https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/list.txt,PROXY
+RULE-SET,https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/list-direct-full.txt,DIRECT
 ```
 
 > `PROXY` 换成你自己配置里的策略组名。
@@ -160,21 +179,23 @@ RULE-SET,https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/list.txt,P
 
 | 文件 | 内容 | 条数 |
 |---|---|---|
-| `clash.yaml` | mihomo 完整配置模板（节点留空） | — |
-| `providers.yaml` | 可粘贴的 rule-providers + rules 片段 | — |
+| `clash-full.yaml` | **推荐**：mihomo 完整配置模板，含 `cn` 全量（节点留空） | — |
+| `providers-full.yaml` | 可粘贴片段，含 `cn` 全量 | — |
+| `singbox-direct-full.json` | sing-box 直连集，含 cn 全量 | 109961 |
+| `list-direct-full.txt` | `DOMAIN-SUFFIX` 直连集，含 cn 全量 | 109961 |
+| `domains-direct-full.txt` | 纯域名直连集，含 cn 全量 | 109961 |
+| `clash.yaml` | 精简版：mihomo 完整配置模板（节点留空） | — |
+| `providers.yaml` | 精简版：可粘贴的 rule-providers + rules 片段 | — |
 | `singbox-proxy.json` | sing-box `rule_set`，走代理 | 281 |
 | `singbox-direct.json` | sing-box `rule_set`，强制直连 | 42 |
 | `list.txt` | `DOMAIN-SUFFIX` 列表，走代理 | 281 |
 | `list-direct.txt` | `DOMAIN-SUFFIX` 列表，强制直连 | 42 |
 | `domains.txt` | 纯域名，走代理 | 281 |
 | `domains-direct.txt` | 纯域名，强制直连 | 42 |
-| `clash-full.yaml` | 同上完整模板，多挂 `cn` 规则集 | — |
-| `providers-full.yaml` | 同上片段，多挂 `cn` 规则集 | — |
-| `singbox-direct-full.json` | sing-box 直连集，含 cn 全量 | 109961 |
-| `list-direct-full.txt` | `DOMAIN-SUFFIX` 直连集，含 cn 全量 | 109961 |
-| `domains-direct-full.txt` | 纯域名直连集，含 cn 全量 | 109961 |
 
-**精简版 vs 完整版**：精简版只导出「公共库判不对」的部分——修正层 + 分类层，共 323 条，靠客户端自带的 `GEOIP,CN` 兜底国内流量，加载快、内存小。完整版额外把 `cn` 的 11 万条域名也给你，完全不依赖 GEOIP 与 geosite，代价是多占十几 MB 内存和一次 2.2MB 下载。两种都在，按客户端能力选。
+**完整版 vs 精简版**：完整版额外把 `cn` 的 11 万条域名给你，完全不依赖 `GEOIP` 与 geosite，代价是多占十几 MB 内存和一次 2.2MB 下载——**默认建议选它**。精简版只导出「公共库判不对」的部分（修正层 + 分类层，共 323 条），靠客户端自带的 `GEOIP,CN` 兜底国内流量，加载快、内存小；只有客户端内存实在紧张时才选。
+
+**注意**：代理侧永远用精简版的 `singbox-proxy.json` / `list.txt` / `domains.txt`，完整版的三个 `*-direct-full` 全是直连集。别把 11 万条 cn 塞进代理侧。
 
 `clash.yaml` 与 `clash-full.yaml` 里的 `cn` 都是远程 `rule-provider` 引用，不写进模板文件本身——所以两份模板体积几乎一样，只有规则判定多一层。
 
