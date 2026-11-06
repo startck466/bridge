@@ -30,10 +30,12 @@ DIST = os.path.join(BASE, 'dist')
 
 # DNS 段：全站唯一定义。build.py / export.py / make_sub.py 共用，避免三处各改一遍改漏。
 # 设计要点：
-#   1. CN 域名走国内公共 DoH（阿里 + 腾讯）。
-#      **不要改成 system**：iOS(Stash/Surge)/Android 的 TUN 客户端会把系统 DNS 换成自身
-#      虚拟地址，system 读到后形成回环死循环 —— 2026-11-07 实测 iPad 挂 Stash 后国内站点
-#      全部无法访问、只有走非 CN 分支的域名能通。订阅要分发给多设备多网络，必须用绝对地址。
+#   1. CN 域名：system（设备当前网络的实际 DNS，换网关 192.168.1.1/192.168.31.1 都不用改配置）
+#      + 国内公共 DoH 三源并发抢答。
+#      为什么不只写 system：iOS(Stash/Surge)/Android 的 TUN 客户端会把系统 DNS 换成自身
+#      虚拟地址，system 读到后形成回环 —— 2026-11-07 实测 iPad 挂 Stash 后国内站点全挂、
+#      只有非 CN 分支可通。加了阿里/腾讯 DoH 并发兜底后，桌面端 system 秒回（走本地路由），
+#      TUN 端 system 那路超时由 DoH 接住，两头都不出事。
 #   2. 非 CN 域名问境外加密 DoH（不让阿里/腾讯看到你在访问什么，也避开国内 DNS 污染）
 #   3. proxy-server-nameserver 固定走直连国内 DoH —— 否则"用代理去解析代理服务器的域名"会死循环。
 #   4. fallback-filter 按 geoip 剔除被污染的应答，兜住 nameserver-policy 覆盖不到的长尾域名。
@@ -55,15 +57,17 @@ DNS_BLOCK = [
     '  proxy-server-nameserver:',
     '    - https://dns.alidns.com/dns-query',
     '    - https://doh.pub/dns-query',
-    '  # 兜底：默认问国内 DoH；下面 policy 里的非 CN 域名改问境外加密 DNS',
+    '  # 兜底：默认先问设备自身网络 DNS，再并发国内 DoH',
     '  nameserver:',
+    '    - system',
     '    - https://dns.alidns.com/dns-query',
     '    - https://doh.pub/dns-query',
     '  nameserver-policy:',
-    '    # CN 域名固定走国内公共 DoH。**不要用 system**：iOS/Android 的 TUN 客户端',
-    '    # 会把系统 DNS 改成自身虚拟地址，system 读到后回环成死循环，CN 域名全解析失败',
-    '    # （2026-11-07 实测：iPad Stash 走 system 时国内站点全挂、仅非 CN 分支可通）',
+    '    # CN 域名走设备默认 DNS（system）+ 国内 DoH 并发抢答。',
+    '    # system 单用会在 TUN 客户端回环（2026-11-07 iPad Stash 事故），所以必须留 DoH 兜底：',
+    '    # 桌面端 system 先回答（走自己的路由/运营商），TUN 端 system 超时则由阿里/腾讯接住。',
     '    "geosite:cn":',
+    '      - system',
     '      - https://dns.alidns.com/dns-query',
     '      - https://doh.pub/dns-query',
     '    "geosite:geolocation-!cn":',
