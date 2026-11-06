@@ -28,6 +28,47 @@ DATA = os.path.join(BASE, 'scripts', 'data')
 RULE = os.path.join(BASE, 'rule')
 DIST = os.path.join(BASE, 'dist')
 
+# DNS 段：全站唯一定义。build.py / export.py / make_sub.py 共用，避免三处各改一遍改漏。
+# 设计要点：
+#   1. CN 域名问国内 DoH（快、CDN 就近）
+#   2. 非 CN 域名问境外加密 DoH（不让阿里/腾讯看到你在访问什么，也避开国内 DNS 污染）
+#   3. proxy-server-nameserver 固定走直连国内 DoH —— 否则"用代理去解析代理服务器的域名"会死循环
+#   4. fallback-filter 按 geoip 剔除被污染的应答，兜住 nameserver-policy 覆盖不到的长尾域名
+DNS_BLOCK = [
+    '  enable: true',
+    '  ipv6: true',
+    '  enhanced-mode: fake-ip',
+    '  fake-ip-range: 198.18.0.1/16',
+    '  fake-ip-filter:',
+    '    - "*.lan"',
+    '    - "*.local"',
+    '    - "localhost.ptlogin2.qq.com"',
+    '  default-nameserver:',
+    '    - 223.5.5.5',
+    '    - 119.29.29.29',
+    '  # 解析代理服务器域名本身必须走直连国内 DoH，否则会形成循环依赖',
+    '  proxy-server-nameserver:',
+    '    - https://dns.alidns.com/dns-query',
+    '    - https://doh.pub/dns-query',
+    '  # 兜底：默认只问国内 DoH；下面 policy 里的非 CN 域名改问境外加密 DNS',
+    '  nameserver:',
+    '    - https://dns.alidns.com/dns-query',
+    '    - https://doh.pub/dns-query',
+    '  nameserver-policy:',
+    '    "geosite:cn":',
+    '      - https://dns.alidns.com/dns-query',
+    '      - https://doh.pub/dns-query',
+    '    "geosite:geolocation-!cn":',
+    '      - https://1.1.1.1/dns-query',
+    '      - https://8.8.8.8/dns-query',
+    '  fallback:',
+    '    - https://1.1.1.1/dns-query',
+    '    - https://8.8.8.8/dns-query',
+    '  fallback-filter:',
+    '    geoip: true',
+    '    geoip-code: CN',
+]
+
 # 分类 -> 说明。顺序即规则匹配优先级（不含 cn，cn 在最后兜底）
 CATS = [
     ('fix-direct', '修正层：该直连却被误判为代理'),
@@ -151,20 +192,8 @@ def build_subscription(cats_count, today, user='startck466', repo='bridge'):
     out.append('global-client-fingerprint: chrome')
     out.append('')
     out.append('dns:')
-    out.append('  enable: true')
-    out.append('  ipv6: true')
-    out.append('  enhanced-mode: fake-ip')
-    out.append('  fake-ip-range: 198.18.0.1/16')
-    out.append('  fake-ip-filter:')
-    out.append('    - "*.lan"')
-    out.append('    - "*.local"')
-    out.append('    - "localhost.ptlogin2.qq.com"')
-    out.append('  default-nameserver:')
-    out.append('    - 223.5.5.5')
-    out.append('    - 119.29.29.29')
-    out.append('  nameserver:')
-    out.append('    - https://dns.alidns.com/dns-query')
-    out.append('    - https://doh.pub/dns-query')
+    for line in DNS_BLOCK:
+        out.append(line)
     out.append('')
     out.append('proxies: []   # 节点由私有配置注入，规则库本身不含节点')
     out.append('')
