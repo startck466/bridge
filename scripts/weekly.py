@@ -174,26 +174,73 @@ def step_push(gh):
 
 
 # ---------------------------------------------------------------- 4. 刷新 + 校验
+def purge_path(repo, rel):
+    """刷新单条 jsDelivr 缓存。
+
+    返回 'ok' / 'throttled' / 'error'。jsDelivr 对同一路径按分钟级节流，
+    被节流时调用会被直接丢弃（缓存不会刷新），必须显式识别出来，
+    否则会出现"purge 看似成功、线上仍是旧内容"的假象。
+    """
+    url = 'https://purge.jsdelivr.net/gh/%s@main/%s' % (repo, rel)
+    key = '/gh/%s@main/%s' % (repo, rel)
+    try:
+        st, body = http_get(url, timeout=45)
+        info = (json.loads(body.decode('utf-8', 'replace')).get('paths') or {}).get(key, {})
+        return 'throttled' if info.get('throttled') else 'ok'
+    except Exception:
+        return 'error'
+
+
+def head_sha():
+    r = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=BASE,
+                       capture_output=True)
+    return r.stdout.decode('utf-8', 'replace').strip() or None
+
+
 def step_verify(gh):
     base = gh['rule_base']
     exp_base = base.replace('/rule', '/export')
-    print('  jsDelivr 缓存刷新:')
-    for name in RULES:
-        purge = 'https://purge.jsdelivr.net/gh/%s@main/rule/%s.yaml' % (gh['repo'], name)
-        try:
-            http_get(purge, timeout=45)
-        except Exception:
-            pass
-    for name, _ in EXPORTS:
-        purge = 'https://purge.jsdelivr.net/gh/%s@main/export/%s' % (gh['repo'], name)
-        try:
-            http_get(purge, timeout=45)
-        except Exception:
-            pass
-    print('  已完成')
+    sha = head_sha()
 
-    print('  逐项校验:')
+    print('  jsDelivr 缓存刷新:')
+    stat = {'ok': 0, 'throttled': 0, 'error': 0}
+    for name in RULES:
+        stat[purge_path(gh['repo'], 'rule/%s.yaml' % name)] += 1
+    for name, _ in EXPORTS:
+        stat[purge_path(gh['repo'], 'export/%s' % name)] += 1
+    print('    成功 %d  被节流 %d  失败 %d'
+          % (stat['ok'], stat['throttled'], stat['error']))
+    if stat['throttled']:
+        print('    !! 存在被节流的路径，@main 可能仍是旧内容；'
+              '节流按路径计，通常数十分钟后重试即可')
+
+    # 先验固定 commit：能区分"仓库内容错了"和"只是 CDN 缓存旧了"
+    bad_origin = []
+    origin_count = {}
+    if sha:
+        print('  源站校验 @%s（绕过 CDN 缓存，反映 GitHub 真实内容）:' % sha)
+        src_base = base.replace('@main', '@' + sha)
+        for name in RULES:
+            try:
+                st, body = http_get('%s/%s.yaml' % (src_base, name), timeout=60)
+                head = body[:200].decode('utf-8', 'replace')
+                good = (st == 200 and head.startswith('# bridge rule set'))
+                n = head.split('count: ')[1].split(' ')[0] if 'count: ' in head else '?'
+                origin_count[name] = n
+                print('    %-12s HTTP=%s  %7s B  count=%s  %s'
+                      % (name, st, len(body), n, 'OK' if good else '<<< 内容异常'))
+                if not good:
+                    bad_origin.append(name)
+            except Exception as e:
+                print('    %-12s 失败 %s' % (name, str(e)[:60]))
+                bad_origin.append(name)
+        if bad_origin:
+            print('    !! 源站内容异常：%s（这是真实的规则错误，不是缓存问题）'
+                  % ', '.join(bad_origin))
+
+    print('  逐项校验 @main（客户端实际拉取的地址）:')
     ok = bad = 0
+    stale = []
     for name in RULES:
         url = '%s/%s.yaml' % (base, name)
         try:
@@ -202,8 +249,12 @@ def step_verify(gh):
             # 内容必须是我们生成的，不能是 CDN 错误页
             good = (st == 200 and head.startswith('# bridge rule set'))
             n = head.split('count: ')[1].split(' ')[0] if 'count: ' in head else '?'
+            note = 'OK' if good else '<<< 内容异常'
+            if good and origin_count.get(name) not in (None, n):
+                note = '<<< 缓存落后（源站 count=%s）' % origin_count[name]
+                stale.append(name)
             print('    %-12s HTTP=%s  %7s B  count=%s  %s'
-                  % (name, st, len(body), n, 'OK' if good else '<<< 内容异常'))
+                  % (name, st, len(body), n, note))
             ok += 1 if good else 0
             bad += 0 if good else 1
         except Exception as e:
@@ -225,7 +276,10 @@ def step_verify(gh):
             bad += 1
 
     print('  校验: 成功 %d / 失败 %d' % (ok, bad))
-    return bad == 0
+    if stale:
+        print('  !! 以下规则集 @main 仍是旧版本，客户端需要等缓存过期或重试 purge：')
+        print('     %s' % ', '.join(stale))
+    return bad == 0 and not stale
 
 
 def step_seal():
