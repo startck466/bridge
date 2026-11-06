@@ -30,10 +30,15 @@ DIST = os.path.join(BASE, 'dist')
 
 # DNS 段：全站唯一定义。build.py / export.py / make_sub.py 共用，避免三处各改一遍改漏。
 # 设计要点：
-#   1. CN 域名问国内 DoH（快、CDN 就近）
-#   2. 非 CN 域名问境外加密 DoH（不让阿里/腾讯看到你在访问什么，也避开国内 DNS 污染）
-#   3. proxy-server-nameserver 固定走直连国内 DoH —— 否则"用代理去解析代理服务器的域名"会死循环
-#   4. fallback-filter 按 geoip 剔除被污染的应答，兜住 nameserver-policy 覆盖不到的长尾域名
+#   1. 所有域名统一走国内 DoH（阿里 + 腾讯），快、CDN 就近。
+#      **绝对不要用 1.1.1.1 / 8.8.8.8 这类境外 DoH 直连解析**：国内直连必超时，
+#      2026-11-07 实测 8 秒无响应，客户端表现就是「所有 DNS 请求失败 / 5000ms」、
+#      海外站点全部打不开，而国内站点正常（看起来像 DNS 分流坏了，其实是境外 DoH 死了）。
+#   2. 海外域名不需要本地做"干净解析"：fake-ip + 代理出站时传的是域名，
+#      由代理服务器那一端解析，本地 DoH 返回什么 IP 都不影响走代理的域名。
+#   3. proxy-server-nameserver 固定走直连国内 DoH —— 否则"用代理去解析代理服务器的域名"会死循环。
+#   4. 去广告不靠 DNS 层（内网地址在移动网络不可达），靠规则层 RULE-SET + REJECT。
+#   5. 不要用 system：iOS/Android 的 TUN 客户端会把系统 DNS 换成自身虚拟地址，形成回环。
 DNS_BLOCK = [
     '  enable: true',
     '  ipv6: true',
@@ -50,23 +55,11 @@ DNS_BLOCK = [
     '  proxy-server-nameserver:',
     '    - https://dns.alidns.com/dns-query',
     '    - https://doh.pub/dns-query',
-    '  # 兜底：默认只问国内 DoH；下面 policy 里的非 CN 域名改问境外加密 DNS',
+    '  # 全部域名统一问国内 DoH。不要加境外 DoH、不要加 fallback 到 1.1.1.1/8.8.8.8：',
+    '  # 国内直连境外 DoH 必超时，会让所有海外域名解析失败 5000ms（2026-11-07 实测）。',
     '  nameserver:',
     '    - https://dns.alidns.com/dns-query',
     '    - https://doh.pub/dns-query',
-    '  nameserver-policy:',
-    '    "geosite:cn":',
-    '      - https://dns.alidns.com/dns-query',
-    '      - https://doh.pub/dns-query',
-    '    "geosite:geolocation-!cn":',
-    '      - https://1.1.1.1/dns-query',
-    '      - https://8.8.8.8/dns-query',
-    '  fallback:',
-    '    - https://1.1.1.1/dns-query',
-    '    - https://8.8.8.8/dns-query',
-    '  fallback-filter:',
-    '    geoip: true',
-    '    geoip-code: CN',
 ]
 
 # 分类 -> 说明。顺序即规则匹配优先级（不含 cn，cn 在最后兜底）

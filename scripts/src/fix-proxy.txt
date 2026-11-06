@@ -5,11 +5,23 @@
 #   2. 国外服务的域名被国内厂商代理运营
 #   3. 公共规则库误归入直连清单
 #
-# 目前为空，靠实际反馈积累。遇到「该走代理却走了直连」的站，加到这里
-# 最后更新：2026-11-05
+# 规则顺序里 fix-proxy(#8) 在 cn(#15)/GEOIP(#16) 之前，所以这里能覆盖误判。
+# 最后更新：2026-11-07
 
-# === 国外服务但有国内节点 ===
-# （示例格式，实际按需添加）
-# example.com   # 2026-11-05 访问被识别为国内 IP，需强制代理
-
-# 最后更新：2026-11-05
+# === Google 系（2026-11-07）===
+# 根因：公共域名库把 gstatic / googleapis / googleusercontent 等归为"国内域名"
+# （因为国内能连通部分节点），导致规则 #15 RULE-SET,cn,DIRECT 把它们直连，
+# 实际被墙 → 表现为「bing 能开、Google 全线打不开、海外站点 DNS 超时」。
+google.com
+gstatic.com
+googleusercontent.com
+googleapis.com
+googlevideo.com
+gvt1.com
+gvt2.com
+ggpht.com
+youtube.com
+ytimg.com
+googlesyndication.com
+doubleclick.net
+recaptcha.net

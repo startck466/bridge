@@ -1,12 +1,9 @@
 # bridge rule set: media
 # 国外流媒体 / 影音
-# count: 46 | generated: 2026-11-06
+# count: 43 | generated: 2026-11-07
 # DO NOT EDIT — 修改请改 scripts/src/media.txt 后重新构建
 payload:
-  - '+.youtube.com'
   - '+.youtu.be'
-  - '+.ytimg.com'
-  - '+.googlevideo.com'
   - '+.yt3.ggpht.com'
   - '+.vimeo.com'
   - '+.dailymotion.com'

@@ -1,6 +1,6 @@
 # bridge rule set: cn
 # 国内域名（全量兜底）
-# count: 109919 | generated: 2026-11-06
+# count: 109916 | generated: 2026-11-07
 # DO NOT EDIT — 修改请改 scripts/src/cn.txt 后重新构建
 payload:
   - '+.0.zone'
@@ -109675,7 +109675,6 @@ payload:
   - '+.dl.google.com'
   - '+.dl.l.google.com'
   - '+.doubleclick-cn.net'
-  - '+.doubleclick.net'
   - '+.download.developer.apple.com'
   - '+.download.microsoft.com'
   - '+.download.mlcc.google.com'
@@ -109706,7 +109705,6 @@ payload:
   - '+.googleoptimize-cn.com'
   - '+.googleoptimize.com'
   - '+.googlesyndication-cn.com'
-  - '+.googlesyndication.com'
   - '+.googletagmanager-cn.com'
   - '+.googletagmanager.com'
   - '+.googletagservices-cn.com'
@@ -109831,7 +109829,6 @@ payload:
   - '+.publicassets.cdn-apple.com'
   - '+.qpx.googleflights.net'
   - '+.recaptcha-cn.net'
-  - '+.recaptcha.net'
   - '+.redirector.bdn.dev'
   - '+.redirector.c.chat.google.com'
   - '+.redirector.c.mail.google.com'
