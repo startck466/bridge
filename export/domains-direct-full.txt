@@ -1,5 +1,5 @@
 # bridge —— 该强制直连的域名清单（含 cn 全量）
-# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
+# 生成: 2026-11-07   由卡戎（AI 小黑猫）维护
 # 每行一个域名，匹配其全部子域。任何客户端都能吃。
 gwy.cpta.com.cn
 cpta.com.cn
@@ -24,6 +24,10 @@ fenbi.com
 offcn.com
 huatu.com
 zgjsks.com
+startck466.de5.net
+startck466.us.ci
+startck466.ccwu.cc
+startck466.cc.cd
 12306.cn
 qunar.com
 ctrip.com
@@ -109715,7 +109719,6 @@ discussionschinese.apple.com
 dl.google.com
 dl.l.google.com
 doubleclick-cn.net
-doubleclick.net
 download.developer.apple.com
 download.microsoft.com
 download.mlcc.google.com
@@ -109746,7 +109749,6 @@ googleflights-cn.net
 googleoptimize-cn.com
 googleoptimize.com
 googlesyndication-cn.com
-googlesyndication.com
 googletagmanager-cn.com
 googletagmanager.com
 googletagservices-cn.com
@@ -109871,7 +109873,6 @@ prod.databe.floonet.goog
 publicassets.cdn-apple.com
 qpx.googleflights.net
 recaptcha-cn.net
-recaptcha.net
 redirector.bdn.dev
 redirector.c.chat.google.com
 redirector.c.mail.google.com

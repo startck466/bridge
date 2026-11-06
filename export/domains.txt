@@ -1,6 +1,19 @@
 # bridge —— 该走代理的域名清单
-# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
+# 生成: 2026-11-07   由卡戎（AI 小黑猫）维护
 # 每行一个域名，匹配其全部子域。任何客户端都能吃。
+google.com
+gstatic.com
+googleusercontent.com
+googleapis.com
+googlevideo.com
+gvt1.com
+gvt2.com
+ggpht.com
+youtube.com
+ytimg.com
+googlesyndication.com
+doubleclick.net
+recaptcha.net
 openai.com
 chatgpt.com
 oaistatic.com
@@ -192,10 +205,7 @@ mastodon.social
 mastodon.online
 bsky.app
 bsky.social
-youtube.com
 youtu.be
-ytimg.com
-googlevideo.com
 yt3.ggpht.com
 vimeo.com
 dailymotion.com

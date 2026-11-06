@@ -1,6 +1,6 @@
 # ============================================================
 # bridge —— 分流规则模板（不含任何节点）
-# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
+# 生成: 2026-11-07   由卡戎（AI 小黑猫）维护
 # 说明: https://github.com/startck466/bridge
 # ============================================================
 #
@@ -47,19 +47,6 @@ dns:
   nameserver:
     - https://dns.alidns.com/dns-query
     - https://doh.pub/dns-query
-  nameserver-policy:
-    "geosite:cn":
-      - https://dns.alidns.com/dns-query
-      - https://doh.pub/dns-query
-    "geosite:geolocation-!cn":
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-  fallback:
-    - https://1.1.1.1/dns-query
-    - https://8.8.8.8/dns-query
-  fallback-filter:
-    geoip: true
-    geoip-code: CN
 
 proxies: []   # ← 方式 B：把你的节点写在这里
 

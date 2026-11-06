@@ -3,14 +3,17 @@
 """
 生成含节点的 FlClash 配置（私有，不入公开仓库）
 
-用法:
-    python3 make_sub.py [--base=规则集URL前缀] [--out=路径]
-
-默认规则源走 jsDelivr（国内可直连，24 小时缓存）:
-    https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule
+默认规则源走 jsDelivr（国内可直连），ref 取自 scripts/sub-ref.txt：
+    https://fastly.jsdelivr.net/gh/startck466/bridge@<commit>/rule
 
 注意: cdn.jsdelivr.net 与 raw.githubusercontent.com 在国内均被 DNS 污染，
 必须用 fastly / gcore / testingcf 这几个子域。
+
+不要把 ref 写回 @main：@main 有边缘缓存、只能靠 purge 刷，而 purge 会限流，
+会导致"规则改了但客户端拉到旧内容"。固定 commit 不需要 purge。详见 _ref.py。
+
+用法:
+    python3 make_sub.py [--base=规则集URL前缀] [--out=路径]
 """
 
 import io
@@ -18,8 +21,11 @@ import os
 import sys
 import datetime
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _ref import rule_base, RULE_REF  # noqa: E402
+
 DEFAULT_OUT = 'D:/ai/ai-vps/.workbuddy/tmp/bridge-sub.yaml'
-DEFAULT_BASE = 'https://fastly.jsdelivr.net/gh/startck466/bridge@main/rule'
+DEFAULT_BASE = rule_base()
 
 def load_nodes():
     """从 scripts/.hosts.json 读节点 YAML（节点凭据绝不入库）。"""

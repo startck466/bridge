@@ -1,7 +1,20 @@
 # bridge —— 该走代理的域名（classical 规则集）
-# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
+# 生成: 2026-11-07   由卡戎（AI 小黑猫）维护
 # 格式: DOMAIN-SUFFIX，不含策略名，策略在使用处指定
 # Clash 引用时 behavior 用 classical；Surge 用 RULE-SET
+DOMAIN-SUFFIX,google.com
+DOMAIN-SUFFIX,gstatic.com
+DOMAIN-SUFFIX,googleusercontent.com
+DOMAIN-SUFFIX,googleapis.com
+DOMAIN-SUFFIX,googlevideo.com
+DOMAIN-SUFFIX,gvt1.com
+DOMAIN-SUFFIX,gvt2.com
+DOMAIN-SUFFIX,ggpht.com
+DOMAIN-SUFFIX,youtube.com
+DOMAIN-SUFFIX,ytimg.com
+DOMAIN-SUFFIX,googlesyndication.com
+DOMAIN-SUFFIX,doubleclick.net
+DOMAIN-SUFFIX,recaptcha.net
 DOMAIN-SUFFIX,openai.com
 DOMAIN-SUFFIX,chatgpt.com
 DOMAIN-SUFFIX,oaistatic.com
@@ -193,10 +206,7 @@ DOMAIN-SUFFIX,mastodon.social
 DOMAIN-SUFFIX,mastodon.online
 DOMAIN-SUFFIX,bsky.app
 DOMAIN-SUFFIX,bsky.social
-DOMAIN-SUFFIX,youtube.com
 DOMAIN-SUFFIX,youtu.be
-DOMAIN-SUFFIX,ytimg.com
-DOMAIN-SUFFIX,googlevideo.com
 DOMAIN-SUFFIX,yt3.ggpht.com
 DOMAIN-SUFFIX,vimeo.com
 DOMAIN-SUFFIX,dailymotion.com

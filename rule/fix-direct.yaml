@@ -1,6 +1,6 @@
 # bridge rule set: fix-direct
 # 修正层：该直连却被误判为代理
-# count: 30 | generated: 2026-11-07
+# count: 34 | generated: 2026-11-07
 # DO NOT EDIT — 修改请改 scripts/src/fix-direct.txt 后重新构建
 payload:
   - '+.gwy.cpta.com.cn'
@@ -26,6 +26,10 @@ payload:
   - '+.offcn.com'
   - '+.huatu.com'
   - '+.zgjsks.com'
+  - '+.startck466.de5.net'
+  - '+.startck466.us.ci'
+  - '+.startck466.ccwu.cc'
+  - '+.startck466.cc.cd'
   - '+.12306.cn'
   - '+.qunar.com'
   - '+.ctrip.com'

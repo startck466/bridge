@@ -84,7 +84,10 @@ def body_of(text):
 
 def main():
     hosts, key = load_creds()
-    base = (hosts.get('github') or {}).get('rule_base') or DEFAULT_BASE
+    # 规则地址一律走 make_sub 的默认值（= scripts/sub-ref.txt 里那个固定 commit）。
+    # 不要再回读 .hosts.json 的 github.rule_base —— 那个是 @main，
+    # 会把固定 ref 覆盖掉，重新踩回"purge 被限流、客户端拉到旧规则"的坑。
+    base = DEFAULT_BASE
 
     fresh = build_config(base)
 

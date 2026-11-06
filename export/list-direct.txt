@@ -1,5 +1,5 @@
 # bridge —— 该强制直连的域名（classical 规则集）
-# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
+# 生成: 2026-11-07   由卡戎（AI 小黑猫）维护
 # 格式: DOMAIN-SUFFIX，不含策略名，策略在使用处指定
 # Clash 引用时 behavior 用 classical；Surge 用 RULE-SET
 DOMAIN-SUFFIX,gwy.cpta.com.cn
@@ -25,6 +25,10 @@ DOMAIN-SUFFIX,fenbi.com
 DOMAIN-SUFFIX,offcn.com
 DOMAIN-SUFFIX,huatu.com
 DOMAIN-SUFFIX,zgjsks.com
+DOMAIN-SUFFIX,startck466.de5.net
+DOMAIN-SUFFIX,startck466.us.ci
+DOMAIN-SUFFIX,startck466.ccwu.cc
+DOMAIN-SUFFIX,startck466.cc.cd
 DOMAIN-SUFFIX,12306.cn
 DOMAIN-SUFFIX,qunar.com
 DOMAIN-SUFFIX,ctrip.com

@@ -39,6 +39,14 @@ offcn.com
 huatu.com
 zgjsks.com
 
+# === 订阅 / 控制面（必须直连，走代理会拉不到订阅）===
+# 2026-11-07：iPad 拉不到订阅。实测 sub.startck466.de5.net 走代理 20s 超时、
+# 直连 0.9s 正常。客户端自动更新订阅时是走隧道拉的，所以这个域名必须直连。
+startck466.de5.net
+startck466.us.ci
+startck466.ccwu.cc
+startck466.cc.cd
+
 # === 国内常用但域名不带 .cn ===
 # 这些走 GEOIP 一般能判对，放这里是为了确定性
 12306.cn
