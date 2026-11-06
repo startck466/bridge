@@ -30,14 +30,15 @@ DIST = os.path.join(BASE, 'dist')
 
 # DNS 段：全站唯一定义。build.py / export.py / make_sub.py 共用，避免三处各改一遍改漏。
 # 设计要点：
-#   1. CN 域名问「本机当前网络的 DNS」（system）—— 不硬编码任何内网地址。
-#      家里网关 DNS 指向 AdGuard 时自动吃到去广告规则；换网络（192.168.1.1 / 192.168.5.1 /
-#      公司 / 咖啡厅）自动跟随新网关，不会因为写死 192.168.31.235 而在外网解析失败。
+#   1. CN 域名走国内公共 DoH（阿里 + 腾讯）。
+#      **不要改成 system**：iOS(Stash/Surge)/Android 的 TUN 客户端会把系统 DNS 换成自身
+#      虚拟地址，system 读到后形成回环死循环 —— 2026-11-07 实测 iPad 挂 Stash 后国内站点
+#      全部无法访问、只有走非 CN 分支的域名能通。订阅要分发给多设备多网络，必须用绝对地址。
 #   2. 非 CN 域名问境外加密 DoH（不让阿里/腾讯看到你在访问什么，也避开国内 DNS 污染）
 #   3. proxy-server-nameserver 固定走直连国内 DoH —— 否则"用代理去解析代理服务器的域名"会死循环。
-#      注意：这里**不能**用 system，代理服务器域名必须由直连的公共 DoH 解析。
 #   4. fallback-filter 按 geoip 剔除被污染的应答，兜住 nameserver-policy 覆盖不到的长尾域名。
-#      实测：AdGuard 拦截返回的 0.0.0.0 不会被 fallback 判为无效而兜穿，拦截可保住。
+#   5. 去广告不靠 DNS 层（内网 AdGuard 地址在移动网络不可达、写死会拖慢解析），
+#      靠规则层 RULE-SET + REJECT，与 DNS 完全解耦。
 DNS_BLOCK = [
     '  enable: true',
     '  ipv6: true',
@@ -59,10 +60,12 @@ DNS_BLOCK = [
     '    - https://dns.alidns.com/dns-query',
     '    - https://doh.pub/dns-query',
     '  nameserver-policy:',
-    '    # CN 域名跟随本机当前网络 DNS(system)：家里网关指向 AdGuard 即自动去广告；',
-    '    # 换网络自动跟随新网关，不会因写死内网 IP 而在外网失联',
+    '    # CN 域名固定走国内公共 DoH。**不要用 system**：iOS/Android 的 TUN 客户端',
+    '    # 会把系统 DNS 改成自身虚拟地址，system 读到后回环成死循环，CN 域名全解析失败',
+    '    # （2026-11-07 实测：iPad Stash 走 system 时国内站点全挂、仅非 CN 分支可通）',
     '    "geosite:cn":',
-    '      - system',
+    '      - https://dns.alidns.com/dns-query',
+    '      - https://doh.pub/dns-query',
     '    "geosite:geolocation-!cn":',
     '      - https://1.1.1.1/dns-query',
     '      - https://8.8.8.8/dns-query',
