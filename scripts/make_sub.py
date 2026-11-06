@@ -108,9 +108,10 @@ dns:
     - https://dns.alidns.com/dns-query
     - https://doh.pub/dns-query
   nameserver-policy:
+    # CN 域名跟随本机当前网络 DNS(system)：家里网关指向 AdGuard 即自动去广告；
+    # 换网络自动跟随新网关，不会因写死内网 IP 而在外网失联
     "geosite:cn":
-      - https://dns.alidns.com/dns-query
-      - https://doh.pub/dns-query
+      - system
     "geosite:geolocation-!cn":
       - https://1.1.1.1/dns-query
       - https://8.8.8.8/dns-query

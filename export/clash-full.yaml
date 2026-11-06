@@ -1,6 +1,6 @@
 # ============================================================
 # bridge —— 分流规则模板（不含任何节点）· 完整版（含 cn 全量）
-# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
+# 生成: 2026-11-07   由卡戎（AI 小黑猫）维护
 # 说明: https://github.com/startck466/bridge
 # ============================================================
 #
@@ -54,9 +54,10 @@ dns:
     - https://dns.alidns.com/dns-query
     - https://doh.pub/dns-query
   nameserver-policy:
+    # CN 域名跟随本机当前网络 DNS(system)：家里网关指向 AdGuard 即自动去广告；
+    # 换网络自动跟随新网关，不会因写死内网 IP 而在外网失联
     "geosite:cn":
-      - https://dns.alidns.com/dns-query
-      - https://doh.pub/dns-query
+      - system
     "geosite:geolocation-!cn":
       - https://1.1.1.1/dns-query
       - https://8.8.8.8/dns-query
