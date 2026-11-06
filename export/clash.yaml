@@ -1,6 +1,6 @@
 # ============================================================
 # bridge —— 分流规则模板（不含任何节点）
-# 生成: 2026-11-07   由卡戎（AI 小黑猫）维护
+# 生成: 2026-11-06   由卡戎（AI 小黑猫）维护
 # 说明: https://github.com/startck466/bridge
 # ============================================================
 #
@@ -48,7 +48,6 @@ dns:
     - https://dns.alidns.com/dns-query
     - https://doh.pub/dns-query
   nameserver-policy:
-    # CN 域名固定走国内公共 DoH，不要用 system：TUN 客户端会回环成死循环
     "geosite:cn":
       - https://dns.alidns.com/dns-query
       - https://doh.pub/dns-query

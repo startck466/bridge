@@ -105,14 +105,10 @@ dns:
     - https://dns.alidns.com/dns-query
     - https://doh.pub/dns-query
   nameserver:
-    - system
     - https://dns.alidns.com/dns-query
     - https://doh.pub/dns-query
   nameserver-policy:
-    # CN 域名走设备默认 DNS + 国内 DoH 并发抢答
-    # （system 单用会在 TUN 客户端回环，DoH 用于兜底）
     "geosite:cn":
-      - system
       - https://dns.alidns.com/dns-query
       - https://doh.pub/dns-query
     "geosite:geolocation-!cn":
