@@ -1,6 +1,6 @@
 # bridge rule set: fix-proxy
 # 修正层：该代理却被误判为直连
-# count: 13 | generated: 2026-11-07
+# count: 13 | generated: 2026-11-08
 # DO NOT EDIT — 修改请改 scripts/src/fix-proxy.txt 后重新构建
 payload:
   - '+.google.com'

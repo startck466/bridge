@@ -1,6 +1,6 @@
 # bridge rule set: apple
 # 苹果服务
-# count: 12 | generated: 2026-11-07
+# count: 12 | generated: 2026-11-08
 # DO NOT EDIT — 修改请改 scripts/src/apple.txt 后重新构建
 payload:
   - '+.apple.com'
