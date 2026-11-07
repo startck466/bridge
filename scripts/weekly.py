@@ -93,25 +93,9 @@ def step_fetch():
     local = os.path.join(DATA, 'direct.txt')
     if not os.path.isdir(DATA):
         os.makedirs(DATA)
-
-    body = None
-    for url in UPSTREAM_MIRRORS:
-        host = url.split('/')[2]
-        try:
-            st, body = http_get(url)
-            if st == 200 and len(body) > 500000:
-                print('  通道 %-24s OK  %.1f MB' % (host, len(body) / 1048576.0))
-                break
-            print('  通道 %-24s HTTP=%s 体积异常' % (host, st))
-            body = None
-        except Exception as e:
-            print('  通道 %-24s 失败 %s' % (host, str(e)[:60]))
-            body = None
-    if body is None:
-        if os.path.isfile(local):
-            print('  !! 全部通道失败，沿用现有 direct.txt')
-            return
-        sys.exit('!! 上游不可达且本地无数据，中止')
+    if os.path.isfile(local):
+        print('  本地已存在 direct.txt，直接沿用')
+        return
 
     tmp = local + '.new'
     with io.open(tmp, 'wb') as f:
