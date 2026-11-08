@@ -1,6 +1,6 @@
 # bridge rule set: ai
 # AI 服务
-# count: 63 | generated: 2026-11-08
+# count: 63 | generated: 2026-11-09
 # DO NOT EDIT — 修改请改 scripts/src/ai.txt 后重新构建
 payload:
   - '+.openai.com'
