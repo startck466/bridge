@@ -1,16 +1,15 @@
 # 凭据与本地明文产物，绝不入库
 scripts/.hosts.json
 
-# 订阅：只允许密文（sub/bridge.enc）入库，明文 yaml 绝不提交
-sub/*.yaml
-sub/*.yml
-sub/*.bak
-sub/*.txt
-
-dist/
-
 # 上游下载的原始清单（每周重新拉取，无需版本管理）
 scripts/data/direct.txt
+
+# 本地构建骨架（规则源指向 jsDelivr，节点留空）
+dist/
+
+# 任何临时明文产物都不许进仓库（2026-11-08 曾误提交 plain.tmp.yaml）
+*.tmp.yaml
+*.tmp.yml
 
 *.bak
 *.bak-*

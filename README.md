@@ -221,35 +221,36 @@ RULE-SET,https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/list-direc
 
 合计 110242 条。`cn` 走全量兜底，分类层负责精细判定，修正层拥有最高否决权。
 
-## 订阅（含节点，加密托管）
+## 订阅（含节点，不进仓库）
 
-自己用的那份带节点的完整配置通过 **Cloudflare Worker** 分发，仓库里只存密文：
+带节点的完整配置**不再经过 GitHub**，也不再有加密密文入库。仓库只承载规则，
+订阅由服务器直接下发：
 
 ```
-https://sub.startck466.de5.net/<64 位路径令牌>
+主通道  https://startck466.us.ci:8880/s/<64 位路径令牌>     # 直连，Let's Encrypt 证书
+救援通道 https://s.startck466.us.ci/s/<64 位路径令牌>        # Cloudflare 橙云回源
 ```
-
-加密方式：
 
 | 环节 | 做法 |
 |---|---|
-| 落库内容 | `sub/bridge.enc` = `BRIDGE-SUB-v1` + base64(nonce‖密文‖认证标签) |
-| 算法 | **AES-256-GCM**（认证加密，篡改一个字节就解不开） |
-| 密钥 | 32 字节全随机，只存在 `scripts/.hosts.json`（gitignore）与 Worker 的 Secret 变量 `SUB_KEY` |
-| 路径令牌 | 32 字节随机 → 64 位 hex，存在 Worker Secret `SUB_PATH`，用常量时间比较 |
-| 传输 | 强制 HTTPS；响应 `Cache-Control: no-store` |
-| 密钥与密文 | **分离在不同信任域**——仓库公开也无所谓，没有 Worker 里的密钥就是一堆随机字节 |
+| 生成 | 本地 `bridge-private/make_sub.py`，节点来自 `scripts/.hosts.json`（gitignore） |
+| 下发 | `bridge-private/publish_sub.py` 上传到 ZGO `/root/bridge-sub/bridge-sub.yaml`（600） |
+| 服务 | `bridge-sub.service`：8880 TLS + 80 明文（只给 CF 回源），只响应 `/s/<令牌>` |
+| 令牌 | 32 字节随机 → 64 位 hex，存服务器 `/root/bridge-sub/token`（600），常量时间比较 |
+| 传输 | 主通道端到端 TLS；CF 通道边缘 HTTPS + 回源 HTTP（Flexible） |
 
-Worker 代码在 `worker/sub-worker.js`，部署脚本 `worker/deploy.py`（只用标准库，不需要 wrangler）。
+为什么留两条：服务器 IP 若在内地侧被封，主通道立刻失效，但 CF 的回源是从境外
+边缘发起的，仍能把最新订阅取回来——这是换节点、换 IP 时的救援路径，不是日常首选。
+CF 的 HTTPS 回源端口只支持 443/2053/2083/2087/2096/8443，8880 只能走 HTTP 回源，
+所以源站额外开了一个 80 明文监听，仅由 CF 使用。
 
-> 说明：订阅 URL 本质是能力 URL，拿到链接的人就能用。加密保护的是「仓库里的静态文件」和「链接不可猜」，不是防客户端泄露。链接不要发群里、不要贴公开页面。
-
-改节点后重新加密并推送：
+改节点后重新下发：
 
 ```bash
-python3 scripts/seal_sub.py     # 正文没变会自动 SKIP
-python3 worker/deploy.py        # 脚本有改动时重新部署
+python3 ../bridge-private/publish_sub.py
 ```
+
+> 订阅 URL 本质是能力 URL，拿到链接的人就能用。链接不要发群里、不要贴公开页面。
 
 ## 分发方式
 
@@ -292,17 +293,10 @@ bridge/
 │   ├── singbox-direct-full.json   含 cn 全量
 │   ├── list-direct-full.txt
 │   └── domains-direct-full.txt
-├── sub/
-│   └── bridge.enc        订阅密文（AES-256-GCM，密钥不入库）
-├── worker/
-│   ├── sub-worker.js     解密端点
-│   └── deploy.py         部署 / 更新 Worker + 绑域名
 └── scripts/
     ├── build.py          构建脚本：src/*.txt → rule/*.yaml
     ├── export.py         导出通用规则订阅 → export/
-    ├── make_sub.py       生成含节点的订阅配置（节点信息不入库）
-    ├── seal_sub.py       订阅配置 AES-256-GCM 加密 → sub/bridge.enc
-    ├── weekly.py         每周维护：拉上游 → 构建 → 导出 → 加密 → 推送 → 刷缓存 → 校验
+    ├── weekly.py         每周维护：拉上游 → 构建 → 导出 → 推送 → 定 ref → 下发订阅 → 校验
     ├── src/              手工分类清单 ← 改这里
     │   ├── fix-direct.txt
     │   ├── fix-proxy.txt
@@ -334,14 +328,15 @@ python3 scripts/build.py
 python3 scripts/weekly.py
 ```
 
-它做六件事：
+它做七件事：
 
 1. 从 jsDelivr 拉上游最新国内域名清单（多通道依次重试，行数骤降 20% 以上自动保留旧数据）
 2. 重新构建全部规则集（按优先级跨分类去重）
 3. 导出 `export/` 下的通用规则订阅（纯域名，无节点；精简版 + 含 cn 全量的完整版）
-4. 重新加密订阅配置（正文没变自动跳过，不产生无意义提交）
-5. 提交并推送到本仓库
-6. 刷新 jsDelivr 边缘缓存，逐个校验九个规则集返回 HTTP 200 且内容正确
+4. 提交并推送到本仓库
+5. 把客户端的规则地址固定到本次提交（`scripts/sub-ref.txt`），避免 `@main` 边缘缓存读到旧内容
+6. 调用私有脚本把含节点的订阅下发到自有服务器（脚本不在本仓库；缺失时这一步跳过并提示）
+7. 刷新 jsDelivr 边缘缓存，逐个校验九个规则集返回 HTTP 200 且内容正确
 
 加 `--no-push` 只本地重建，不推 GitHub。
 

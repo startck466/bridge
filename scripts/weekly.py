@@ -1,25 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""bridge 每周维护
+"""bridge 每周维护（规则仓库：只承载规则，不承载节点与订阅）
 
 流程:
   1. 拉取上游国内域名清单（走 jsDelivr，不碰香港服务器）
   2. 重建全部规则集
   3. 导出通用规则订阅（export/）
   4. 推送规则到 GitHub，拿到本次提交 SHA
-  5. 把订阅里的规则地址固定到那个 SHA（scripts/sub-ref.txt），并重建
-  6. 加密订阅（sub/bridge.enc）
-  7. 再推一次（地址文件 + 密文）
-  8. 校验：固定 commit 上的规则集 + 订阅端到端解密
+  5. 把规则地址固定到那个 SHA（scripts/sub-ref.txt），并重建
+  6. 再推一次（地址文件）
+  7. 把含节点的私有订阅下发到自有服务器，并校验端到端
 
 客户端（FlClash / mihomo）通过 jsDelivr 拉规则集，24 小时自动刷新一次。
 
-**为什么订阅里的规则地址固定到 commit 而不是 @main**
+**为什么规则地址固定到 commit 而不是 @main**
 @main 走 jsDelivr 边缘缓存，刷新只能靠 purge，而 purge 按路径限流，
 被限流时缓存不刷 —— 就会出现"规则改了、推上去了，客户端几小时还是旧内容"。
 固定 commit 是全新缓存键，push 完立刻可读，不需要 purge。
 
-服务器不再参与任何规则分发，仅作为拉取上游失败时的兜底通道。
+**节点与订阅不在这里**
+本仓库公开，只放规则。含节点的订阅由 `../bridge-private/publish_sub.py`
+生成并下发到自有服务器（8880 + Let's Encrypt 证书），凭据只存在
+`scripts/.hosts.json`（已 gitignore）。如果该私有脚本不存在（比如换机器），
+第 7 步会跳过并提示，不影响规则维护。
 
 用法:
     python3 scripts/weekly.py            # 完整流程
@@ -41,6 +44,7 @@ SCRIPTS = os.path.join(BASE, 'scripts')
 CONF = os.path.join(SCRIPTS, '.hosts.json')
 DATA = os.path.join(BASE, 'scripts', 'data')
 RULE = os.path.join(BASE, 'rule')
+PRIVATE_PUBLISH = os.path.join(os.path.dirname(BASE), 'bridge-private', 'publish_sub.py')
 
 sys.path.insert(0, SCRIPTS)
 import _ref  # noqa: E402
@@ -97,6 +101,19 @@ def step_fetch():
         print('  本地已存在 direct.txt，直接沿用')
         return
 
+    body = None
+    for url in UPSTREAM_MIRRORS:
+        try:
+            st, body = http_get(url, timeout=90)
+            if st == 200 and body:
+                print('  上游通道: %s' % url.split('/')[2])
+                break
+        except Exception as e:
+            print('  通道失败 %s: %s' % (url.split('/')[2], str(e)[:60]))
+            body = None
+    if not body:
+        sys.exit('  所有上游通道均失败')
+
     tmp = local + '.new'
     with io.open(tmp, 'wb') as f:
         f.write(body)
@@ -139,31 +156,6 @@ def step_export():
         print('  !! 导出失败（不影响规则集，仅 export/ 未更新）：%s' % err[:200])
         return False
     return True
-
-
-def enc_digest():
-    """sub/bridge.enc 的内容指纹，用来判断密文是否真的变了。"""
-    import hashlib
-    path = os.path.join(BASE, 'sub', 'bridge.enc')
-    try:
-        with io.open(path, 'rb') as f:
-            return hashlib.sha256(f.read()).hexdigest()
-    except (OSError, IOError):
-        return None
-
-
-def step_seal():
-    """重新加密订阅（节点或配置结构变化时才有实质改动）。
-
-    返回密文是否**真的变了**（seal_sub 正文没变时会 SKIP）。
-    """
-    before = enc_digest()
-    rc, err = run_script('seal_sub.py', tail=6)
-    if rc != 0:
-        print('  !! 订阅加密失败，本次沿用旧密文（不影响规则集）')
-        print('     %s' % err.strip()[:200])
-        return False
-    return enc_digest() != before
 
 
 # ---------------------------------------------------------------- 3. 推送
@@ -261,7 +253,25 @@ def step_push(gh, msg):
     return True, sha
 
 
-# ---------------------------------------------------------------- 4. 刷新 + 校验
+# ---------------------------------------------------------------- 4. 订阅下发
+def step_publish_sub():
+    """把含节点的订阅下发到自有服务器（私有脚本，不在本仓库）。"""
+    if not os.path.isfile(PRIVATE_PUBLISH):
+        print('  跳过：找不到私有发布脚本（%s）' % PRIVATE_PUBLISH)
+        print('  规则维护不受影响；需要更新订阅时在有凭据的机器上手动执行')
+        return None
+    r = subprocess.run([sys.executable, PRIVATE_PUBLISH],
+                       cwd=os.path.dirname(PRIVATE_PUBLISH), capture_output=True)
+    out = r.stdout.decode('utf-8', 'replace')
+    for l in [x for x in out.strip().splitlines() if x.strip()][-8:]:
+        print('  ' + l)
+    if r.returncode != 0:
+        print('  !! 订阅下发失败（规则集不受影响）：%s'
+              % r.stderr.decode('utf-8', 'replace')[-200:])
+    return r.returncode == 0
+
+
+# ---------------------------------------------------------------- 5. 刷新 + 校验
 def purge_path(repo, rel):
     """刷新单条 jsDelivr 缓存。
 
@@ -292,39 +302,7 @@ def local_count(name):
     return head.split('count: ')[1].split(' ')[0] if 'count: ' in head else None
 
 
-def live_sub_rule_base(conf):
-    """拉线上订阅，返回里面的规则基址与正文长度。
-
-    这是唯一能证明「客户端拿到的配置里规则地址是对的」的检查。
-
-    注意 Worker 已改为服务端解密：`sub-worker.js` 用 env.SUB_KEY 解封后
-    直接返回明文 YAML（content-type: text/yaml）。所以这里不能无条件
-    按密文信封解析，否则会误报「密文信封格式不对」。两种形态都兼容：
-      - 明文（当前形态）：直接当正文用
-      - 密文信封（旧形态/直连 raw）：先本地解密
-    """
-    import seal_sub
-    _d, key = seal_sub.load_creds()
-    sub = conf['subscription']
-    url = 'https://%s/%s' % (sub['worker_domain'], sub['path_token'])
-    st, body = http_get(url, timeout=45)
-    if st != 200:
-        return st, None, None
-    text = body.decode('utf-8', 'replace')
-    magic = getattr(seal_sub, 'MAGIC', 'BRIDGE-SUB-v1')
-    if text.lstrip().startswith(magic):
-        plain = seal_sub.unseal(text, key)
-    else:
-        plain = text
-    line = ''
-    for l in plain.splitlines():
-        if l.startswith('# 规则源:'):
-            line = l.split(':', 1)[1].strip()
-            break
-    return st, line, len(plain)
-
-
-def step_verify(conf, ref):
+def step_verify(conf, ref, sub_ok):
     gh = conf['github']
     main_base = gh['rule_base']                       # @main（公开模板用）
     exp_base = main_base.replace('/rule', '/export')
@@ -343,14 +321,12 @@ def step_verify(conf, ref):
     ok = bad = 0
 
     print('  客户端实际拉取的地址（固定 ref）: %s' % pin_base)
-    pin_counts = {}
     for name in RULES:
         try:
             st, body = http_get('%s/%s.yaml' % (pin_base, name), timeout=60)
             head = body[:200].decode('utf-8', 'replace')
             good = (st == 200 and head.startswith('# bridge rule set'))
             n = head.split('count: ')[1].split(' ')[0] if 'count: ' in head else '?'
-            pin_counts[name] = n
             note = 'OK' if good else '<<< 内容异常'
             lc = local_count(name)
             if good and lc and lc != n:
@@ -364,24 +340,14 @@ def step_verify(conf, ref):
             print('    %-12s 失败 %s' % (name, str(e)[:60]))
             bad += 1
 
-    print('  订阅端到端（解密线上密文，确认规则地址已指向固定 ref）:')
-    try:
-        st, base_line, size = live_sub_rule_base(conf)
-        expect = '@' + (ref or '')
-        if st != 200:
-            print('    HTTP=%s  <<< 订阅端点异常' % st)
-            bad += 1
-        elif base_line and expect in base_line:
-            print('    HTTP=200  正文 %d 字符' % size)
-            print('    规则源: %s  OK' % base_line)
-            ok += 1
-        else:
-            print('    HTTP=200  正文 %d 字符' % size)
-            print('    规则源: %s  <<< 没指向 %s' % (base_line or '(未找到)', expect))
-            bad += 1
-    except Exception as e:
-        print('    失败 %s' % str(e)[:120])
+    if sub_ok:
+        print('  订阅下发（服务器 8880）: OK')
+        ok += 1
+    elif sub_ok is False:
+        print('  订阅下发（服务器 8880）: <<< 失败，客户端可能仍拿旧规则')
         bad += 1
+    else:
+        print('  订阅下发（服务器 8880）: 跳过（私有脚本不在本机）')
 
     print('  导出文件校验（@main）:')
     for name, first in EXPORTS:
@@ -400,39 +366,6 @@ def step_verify(conf, ref):
     return bad == 0
 
 
-def step_purge_sub_cf(conf, changed):
-    """密文变了就清一次该域名的 CF 边缘缓存。
-
-    Worker 响应本身带 no-store，理论上不该被边缘缓存；这里是双保险，
-    失败一律忽略，绝不能影响维护流程。
-    """
-    if not changed:
-        return
-    cf = conf.get('cloudflare') or {}
-    tok = cf.get('api_token')
-    zones = cf.get('zone_id') or {}
-    host = conf['subscription']['worker_domain']
-    zid = None
-    for zone, v in zones.items():
-        if host.endswith(zone):
-            zid = v
-            break
-    if not tok or not zid:
-        return
-    try:
-        req = urllib.request.Request(
-            'https://api.cloudflare.com/client/v4/zones/%s/purge_cache' % zid,
-            data=json.dumps({'hosts': [host]}).encode('utf-8'),
-            headers={'Authorization': 'Bearer ' + tok,
-                     'Content-Type': 'application/json'},
-            method='POST')
-        with urllib.request.urlopen(req, timeout=45) as r:
-            d = json.loads(r.read().decode('utf-8', 'replace'))
-        print('  CF 缓存已清理（%s）：%s' % (host, d.get('success')))
-    except Exception as e:
-        print('  CF 缓存清理跳过：%s' % str(e)[:100])
-
-
 def main():
     do_push = '--no-push' not in sys.argv
     conf = load_conf()
@@ -443,20 +376,20 @@ def main():
     print('=' * 56)
     print('当前规则地址 ref: %s' % _ref.RULE_REF)
 
-    print('\n[1/8] 拉取上游国内域名清单')
+    print('\n[1/7] 拉取上游国内域名清单')
     step_fetch()
 
-    print('\n[2/8] 重建规则集')
+    print('\n[2/7] 重建规则集')
     step_build()
 
-    print('\n[3/8] 导出通用规则订阅（不含节点）')
+    print('\n[3/7] 导出通用规则订阅（不含节点）')
     step_export()
 
     ref = _ref.RULE_REF
     if do_push:
-        print('\n[4/8] 推送规则到 GitHub')
+        print('\n[4/7] 推送规则到 GitHub')
         pushed, sha = step_push(gh, 'weekly: 规则更新 %s' % datetime.date.today().isoformat())
-        print('\n[5/8] 把订阅的规则地址固定到本次提交')
+        print('\n[5/7] 把规则地址固定到本次提交')
         # 判定只认"CDN 上真的读得到这个 commit"——它同时证明了推送成功、
         # 也证明了客户端将来能拉到。本次无改动时 HEAD 已在远端，同样成立。
         if sha and ref_reachable(sha, gh['repo']):
@@ -479,21 +412,20 @@ def main():
             print('  !! 本次提交在 CDN 上还读不到，ref 保持不动（%s）' % (ref or '?')[:12])
             print('     客户端不受影响，继续用旧地址；脚本下次运行会再试')
     else:
-        print('\n[4/8] 跳过推送（--no-push）')
-        print('\n[5/8] 跳过 ref 同步（--no-push）')
-
-    print('\n[6/8] 加密订阅（AES-256-GCM）')
-    sealed_ok = step_seal()
+        print('\n[4/7] 跳过推送（--no-push）')
+        print('\n[5/7] 跳过 ref 同步（--no-push）')
 
     if do_push:
-        print('\n[7/8] 推送地址文件与密文')
+        print('\n[6/7] 推送地址文件')
         step_push(gh, 'weekly: 订阅指向 @%s' % (ref or '?')[:12])
-        step_purge_sub_cf(conf, sealed_ok)
     else:
-        print('\n[7/8] 跳过推送（--no-push）')
+        print('\n[6/7] 跳过推送（--no-push）')
 
-    print('\n[8/8] 校验')
-    ok = step_verify(conf, ref)
+    print('\n[7/7] 下发订阅到自有服务器')
+    sub_ok = step_publish_sub() if do_push else None
+
+    print('\n校验')
+    ok = step_verify(conf, ref, sub_ok)
 
     print('\n结果: %s' % ('全部正常' if ok else '存在失败，需人工检查'))
     print('规则地址: %s' % _ref.rule_base(ref=ref))
