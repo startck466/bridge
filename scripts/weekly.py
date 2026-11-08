@@ -77,6 +77,10 @@ UPSTREAM_MIRRORS = [
 
 
 def load_conf():
+    # 优先用环境变量传入的 JSON（凭据保险库直供，本地不落明文）
+    raw = os.environ.get('BRIDGE_HOSTS_JSON')
+    if raw:
+        return json.loads(raw)
     if not os.path.isfile(CONF):
         sys.exit('缺少 %s（含 GitHub 凭据）' % CONF)
     return json.load(io.open(CONF, encoding='utf-8'))
