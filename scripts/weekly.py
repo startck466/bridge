@@ -217,24 +217,29 @@ def git_sha(full=False):
 
 
 def step_push(gh, msg):
-    """提交并推送。返回 (是否推送成功, 当前 HEAD 完整 SHA)。"""
+    """提交并推送。返回 (是否推送成功, 当前 HEAD 完整 SHA)。
+
+    注意：「无改动」只代表不用新建提交，**不代表远端已经是最新的**。
+    早期版本在这里直接 return，导致手工提交过的改动永远推不上去
+    （远端落后 → ref_reachable 失败 → ref 卡在旧 commit）。所以这里
+    无论如何都要走一次 push，git 会自己判断 up-to-date。
+    """
     repo = gh['repo']
     run_git(['add', '-A'], timeout=120)
 
     diff = run_git(['status', '--porcelain'], timeout=60).stdout.decode('utf-8', 'replace')
     if not diff.strip():
-        print('  无变动，跳过提交')
-        return False, git_sha(full=True)
-
-    base_cmd = ['-c', 'core.autocrlf=false', 'commit', '-m', msg]
-    r = run_git(base_cmd, timeout=120)
-    if r.returncode != 0:
-        # 本机全局配了 1Password SSH 签名，沙箱连不到 agent 会卡死提交
-        err = (r.stderr or b'').decode('utf-8', 'replace')
-        r2 = run_git(['-c', 'commit.gpgsign=false'] + base_cmd, timeout=120)
-        if r2.returncode != 0:
-            print('  提交失败：', ((r2.stderr or err) or b'').decode('utf-8', 'replace')[:200])
-            return False, git_sha(full=True)
+        print('  无新改动，跳过提交（仍会推送本地已有提交）')
+    else:
+        base_cmd = ['-c', 'core.autocrlf=false', 'commit', '-m', msg]
+        r = run_git(base_cmd, timeout=120)
+        if r.returncode != 0:
+            # 本机全局配了 1Password SSH 签名，沙箱连不到 agent 会卡死提交
+            err = (r.stderr or b'').decode('utf-8', 'replace')
+            r2 = run_git(['-c', 'commit.gpgsign=false'] + base_cmd, timeout=120)
+            if r2.returncode != 0:
+                print('  提交失败：', ((r2.stderr or err) or b'').decode('utf-8', 'replace')[:200])
+                return False, git_sha(full=True)
 
     sha = git_sha(full=True)
     tok = gh.get('token') or ''
