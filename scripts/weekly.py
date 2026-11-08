@@ -293,10 +293,15 @@ def local_count(name):
 
 
 def live_sub_rule_base(conf):
-    """拉线上订阅并解密，返回里面的规则基址与正文长度。
+    """拉线上订阅，返回里面的规则基址与正文长度。
 
     这是唯一能证明「客户端拿到的配置里规则地址是对的」的检查。
-    解密用本地 .hosts.json 的密钥，与 Worker 同一把。
+
+    注意 Worker 已改为服务端解密：`sub-worker.js` 用 env.SUB_KEY 解封后
+    直接返回明文 YAML（content-type: text/yaml）。所以这里不能无条件
+    按密文信封解析，否则会误报「密文信封格式不对」。两种形态都兼容：
+      - 明文（当前形态）：直接当正文用
+      - 密文信封（旧形态/直连 raw）：先本地解密
     """
     import seal_sub
     _d, key = seal_sub.load_creds()
@@ -305,7 +310,12 @@ def live_sub_rule_base(conf):
     st, body = http_get(url, timeout=45)
     if st != 200:
         return st, None, None
-    plain = seal_sub.unseal(body.decode('utf-8', 'replace'), key)
+    text = body.decode('utf-8', 'replace')
+    magic = getattr(seal_sub, 'MAGIC', 'BRIDGE-SUB-v1')
+    if text.lstrip().startswith(magic):
+        plain = seal_sub.unseal(text, key)
+    else:
+        plain = text
     line = ''
     for l in plain.splitlines():
         if l.startswith('# 规则源:'):
