@@ -22,7 +22,6 @@ https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/clash-full.yaml
 | 客户端内存紧张，不想要 11 万条 cn | [→ 方式 1B：精简版](#方式-1b精简版不带-cn靠-geoip-兜底) |
 | 看规则怎么判断的 | [RULES.md](RULES.md) |
 | 只要 AI 走代理的最小配置 | [方式 3：只用 AI 那一层](#方式-3只用-ai-那一层) |
-| 要带我节点的完整配置 | 那是私有的一份，见 [订阅（含节点，加密托管）](#订阅含节点加密托管)，不在公开仓库 |
 
 ## 它解决什么问题
 
@@ -221,37 +220,6 @@ RULE-SET,https://fastly.jsdelivr.net/gh/startck466/bridge@main/export/list-direc
 
 合计 110242 条。`cn` 走全量兜底，分类层负责精细判定，修正层拥有最高否决权。
 
-## 订阅（含节点，不进仓库）
-
-带节点的完整配置**不再经过 GitHub**，也不再有加密密文入库。仓库只承载规则，
-订阅由服务器直接下发：
-
-```
-主通道  https://startck466.us.ci:8880/s/<64 位路径令牌>     # 直连，Let's Encrypt 证书
-救援通道 https://s.startck466.us.ci/s/<64 位路径令牌>        # Cloudflare 橙云回源
-```
-
-| 环节 | 做法 |
-|---|---|
-| 生成 | 本地 `bridge-private/make_sub.py`，节点来自 `scripts/.hosts.json`（gitignore） |
-| 下发 | `bridge-private/publish_sub.py` 上传到 ZGO `/root/bridge-sub/bridge-sub.yaml`（600） |
-| 服务 | `bridge-sub.service`：8880 TLS + 80 明文（只给 CF 回源），只响应 `/s/<令牌>` |
-| 令牌 | 32 字节随机 → 64 位 hex，存服务器 `/root/bridge-sub/token`（600），常量时间比较 |
-| 传输 | 主通道端到端 TLS；CF 通道边缘 HTTPS + 回源 HTTP（Flexible） |
-
-为什么留两条：服务器 IP 若在内地侧被封，主通道立刻失效，但 CF 的回源是从境外
-边缘发起的，仍能把最新订阅取回来——这是换节点、换 IP 时的救援路径，不是日常首选。
-CF 的 HTTPS 回源端口只支持 443/2053/2083/2087/2096/8443，8880 只能走 HTTP 回源，
-所以源站额外开了一个 80 明文监听，仅由 CF 使用。
-
-改节点后重新下发：
-
-```bash
-python3 ../bridge-private/publish_sub.py
-```
-
-> 订阅 URL 本质是能力 URL，拿到链接的人就能用。链接不要发群里、不要贴公开页面。
-
 ## 分发方式
 
 规则集通过 **jsDelivr** 分发，国内可直连，无需任何自建服务：
@@ -296,7 +264,7 @@ bridge/
 └── scripts/
     ├── build.py          构建脚本：src/*.txt → rule/*.yaml
     ├── export.py         导出通用规则订阅 → export/
-    ├── weekly.py         每周维护：拉上游 → 构建 → 导出 → 推送 → 定 ref → 下发订阅 → 校验
+    ├── weekly.py         每周维护：拉上游 → 构建 → 导出 → 推送 → 定 ref → 校验
     ├── src/              手工分类清单 ← 改这里
     │   ├── fix-direct.txt
     │   ├── fix-proxy.txt
@@ -328,15 +296,14 @@ python3 scripts/build.py
 python3 scripts/weekly.py
 ```
 
-它做七件事：
+它做六件事：
 
 1. 从 jsDelivr 拉上游最新国内域名清单（多通道依次重试，行数骤降 20% 以上自动保留旧数据）
 2. 重新构建全部规则集（按优先级跨分类去重）
 3. 导出 `export/` 下的通用规则订阅（纯域名，无节点；精简版 + 含 cn 全量的完整版）
 4. 提交并推送到本仓库
-5. 把客户端的规则地址固定到本次提交（`scripts/sub-ref.txt`），避免 `@main` 边缘缓存读到旧内容
-6. 调用私有脚本把含节点的订阅下发到自有服务器（脚本不在本仓库；缺失时这一步跳过并提示）
-7. 刷新 jsDelivr 边缘缓存，逐个校验九个规则集返回 HTTP 200 且内容正确
+5. 把规则地址固定到本次提交（`scripts/rule-ref.txt`），避免 `@main` 边缘缓存读到旧内容
+6. 刷新 jsDelivr 边缘缓存，逐个校验九个规则集返回 HTTP 200 且内容正确
 
 加 `--no-push` 只本地重建，不推 GitHub。
 

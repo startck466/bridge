@@ -1,28 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""bridge 每周维护（规则仓库：只承载规则，不承载节点与订阅）
+"""bridge 每周维护（公开仓库：只承载规则，不含节点、不含订阅令牌）
 
 流程:
   1. 拉取上游国内域名清单（走 jsDelivr，不碰香港服务器）
   2. 重建全部规则集
-  3. 导出通用规则订阅（export/）
+  3. 导出通用规则订阅（export/，纯域名无节点）
   4. 推送规则到 GitHub，拿到本次提交 SHA
-  5. 把规则地址固定到那个 SHA（scripts/sub-ref.txt），并重建
-  6. 再推一次（地址文件）
-  7. 把含节点的私有订阅下发到自有服务器，并校验端到端
+  5. 把规则地址固定到那个 SHA（scripts/rule-ref.txt），并重建
+  6. 再推一次（地址文件）+ 刷新缓存并逐条校验
 
-客户端（FlClash / mihomo）通过 jsDelivr 拉规则集，24 小时自动刷新一次。
+客户端（FlClash / Stash / mihomo）通过 jsDelivr 拉规则集，24 小时自动刷新一次。
 
 **为什么规则地址固定到 commit 而不是 @main**
 @main 走 jsDelivr 边缘缓存，刷新只能靠 purge，而 purge 按路径限流，
 被限流时缓存不刷 —— 就会出现"规则改了、推上去了，客户端几小时还是旧内容"。
 固定 commit 是全新缓存键，push 完立刻可读，不需要 purge。
 
-**节点与订阅不在这里**
-本仓库公开，只放规则。含节点的订阅由 `../bridge-private/publish_sub.py`
-生成并下发到自有服务器（8880 + Let's Encrypt 证书），凭据只存在
-`scripts/.hosts.json`（已 gitignore）。如果该私有脚本不存在（比如换机器），
-第 7 步会跳过并提示，不影响规则维护。
+**节点与私有订阅完全不在这里**
+本仓库公开，只放规则。带节点的私有订阅由本机 `../bridge-private/` 下的
+私有脚本生成并下发到自有服务器，凭据只存在 `scripts/.hosts.json`（已 gitignore）。
+本脚本不引用、不调用任何私有发布逻辑，仓库里也没有订阅地址、令牌或节点。
 
 用法:
     python3 scripts/weekly.py            # 完整流程
@@ -44,7 +42,6 @@ SCRIPTS = os.path.join(BASE, 'scripts')
 CONF = os.path.join(SCRIPTS, '.hosts.json')
 DATA = os.path.join(BASE, 'scripts', 'data')
 RULE = os.path.join(BASE, 'rule')
-PRIVATE_PUBLISH = os.path.join(os.path.dirname(BASE), 'bridge-private', 'publish_sub.py')
 
 sys.path.insert(0, SCRIPTS)
 import _ref  # noqa: E402
@@ -258,25 +255,7 @@ def step_push(gh, msg):
     return True, sha
 
 
-# ---------------------------------------------------------------- 4. 订阅下发
-def step_publish_sub():
-    """把含节点的订阅下发到自有服务器（私有脚本，不在本仓库）。"""
-    if not os.path.isfile(PRIVATE_PUBLISH):
-        print('  跳过：找不到私有发布脚本（%s）' % PRIVATE_PUBLISH)
-        print('  规则维护不受影响；需要更新订阅时在有凭据的机器上手动执行')
-        return None
-    r = subprocess.run([sys.executable, PRIVATE_PUBLISH],
-                       cwd=os.path.dirname(PRIVATE_PUBLISH), capture_output=True)
-    out = r.stdout.decode('utf-8', 'replace')
-    for l in [x for x in out.strip().splitlines() if x.strip()][-8:]:
-        print('  ' + l)
-    if r.returncode != 0:
-        print('  !! 订阅下发失败（规则集不受影响）：%s'
-              % r.stderr.decode('utf-8', 'replace')[-200:])
-    return r.returncode == 0
-
-
-# ---------------------------------------------------------------- 5. 刷新 + 校验
+# ---------------------------------------------------------------- 4. 刷新 + 校验
 def purge_path(repo, rel):
     """刷新单条 jsDelivr 缓存。
 
@@ -307,7 +286,7 @@ def local_count(name):
     return head.split('count: ')[1].split(' ')[0] if 'count: ' in head else None
 
 
-def step_verify(conf, ref, sub_ok):
+def step_verify(conf, ref):
     gh = conf['github']
     main_base = gh['rule_base']                       # @main（公开模板用）
     exp_base = main_base.replace('/rule', '/export')
@@ -345,15 +324,6 @@ def step_verify(conf, ref, sub_ok):
             print('    %-12s 失败 %s' % (name, str(e)[:60]))
             bad += 1
 
-    if sub_ok:
-        print('  订阅下发（服务器 8880）: OK')
-        ok += 1
-    elif sub_ok is False:
-        print('  订阅下发（服务器 8880）: <<< 失败，客户端可能仍拿旧规则')
-        bad += 1
-    else:
-        print('  订阅下发（服务器 8880）: 跳过（私有脚本不在本机）')
-
     print('  导出文件校验（@main）:')
     for name, first in EXPORTS:
         try:
@@ -381,20 +351,20 @@ def main():
     print('=' * 56)
     print('当前规则地址 ref: %s' % _ref.RULE_REF)
 
-    print('\n[1/7] 拉取上游国内域名清单')
+    print('\n[1/6] 拉取上游国内域名清单')
     step_fetch()
 
-    print('\n[2/7] 重建规则集')
+    print('\n[2/6] 重建规则集')
     step_build()
 
-    print('\n[3/7] 导出通用规则订阅（不含节点）')
+    print('\n[3/6] 导出通用规则订阅（不含节点）')
     step_export()
 
     ref = _ref.RULE_REF
     if do_push:
-        print('\n[4/7] 推送规则到 GitHub')
+        print('\n[4/6] 推送规则到 GitHub')
         pushed, sha = step_push(gh, 'weekly: 规则更新 %s' % datetime.date.today().isoformat())
-        print('\n[5/7] 把规则地址固定到本次提交')
+        print('\n[5/6] 把规则地址固定到本次提交')
         # 判定只认"CDN 上真的读得到这个 commit"——它同时证明了推送成功、
         # 也证明了客户端将来能拉到。本次无改动时 HEAD 已在远端，同样成立。
         if sha and ref_reachable(sha, gh['repo']):
@@ -406,7 +376,7 @@ def main():
                 print('  !! 写入 ref 失败：%s' % e)
             if changed:
                 ref = sha
-                print('  sub-ref.txt → %s，按新地址重建' % sha[:12])
+                print('  rule-ref.txt → %s，按新地址重建' % sha[:12])
                 step_build()
                 step_export()
             else:
@@ -417,20 +387,17 @@ def main():
             print('  !! 本次提交在 CDN 上还读不到，ref 保持不动（%s）' % (ref or '?')[:12])
             print('     客户端不受影响，继续用旧地址；脚本下次运行会再试')
     else:
-        print('\n[4/7] 跳过推送（--no-push）')
-        print('\n[5/7] 跳过 ref 同步（--no-push）')
+        print('\n[4/6] 跳过推送（--no-push）')
+        print('\n[5/6] 跳过 ref 同步（--no-push）')
 
     if do_push:
-        print('\n[6/7] 推送地址文件')
-        step_push(gh, 'weekly: 订阅指向 @%s' % (ref or '?')[:12])
+        print('\n[6/6] 推送地址文件')
+        step_push(gh, 'weekly: 规则地址指向 @%s' % (ref or '?')[:12])
     else:
-        print('\n[6/7] 跳过推送（--no-push）')
-
-    print('\n[7/7] 下发订阅到自有服务器')
-    sub_ok = step_publish_sub() if do_push else None
+        print('\n[6/6] 跳过推送（--no-push）')
 
     print('\n校验')
-    ok = step_verify(conf, ref, sub_ok)
+    ok = step_verify(conf, ref)
 
     print('\n结果: %s' % ('全部正常' if ok else '存在失败，需人工检查'))
     print('规则地址: %s' % _ref.rule_base(ref=ref))

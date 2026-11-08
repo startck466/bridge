@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """规则集引用版本（ref）的唯一来源。
 
-## 为什么订阅里的规则地址不能写 @main
+## 为什么规则地址不能写 @main
 
 jsDelivr 对**分支引用**（@main）有边缘缓存，刷新只能靠 purge API，而 purge
 按路径限流（返回 {"throttled":true} 时这次调用被直接丢弃，缓存根本没刷）。
@@ -10,10 +10,10 @@ jsDelivr 对**分支引用**（@main）有边缘缓存，刷新只能靠 purge A
 
 固定 commit 的缓存键是全新的，push 完立刻可读，**完全不需要 purge**。
 
-## sub-ref.txt 的写入时机
+## rule-ref.txt 的写入时机
 
 由 weekly.py 在「规则已推送成功」之后写入，内容就是那次提交的完整 SHA。
-所以订阅里引用的 commit 必然包含当周的规则。没有这个文件（或内容不合法）
+所以引用这个 ref 的一方拿到的必然是当周的规则。没有这个文件（或内容不合法）
 时回退到 main，保证任何情况下都能构建出可用配置。
 """
 
@@ -22,7 +22,7 @@ import os
 import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REF_FILE = os.path.join(HERE, 'sub-ref.txt')
+REF_FILE = os.path.join(HERE, 'rule-ref.txt')
 
 _SHA = re.compile(r'^[0-9a-f]{7,40}$')
 
@@ -32,7 +32,7 @@ CDN_HOST = 'fastly.jsdelivr.net'
 
 
 def read_ref(default='main'):
-    """读 sub-ref.txt；缺失或格式不对时回退 default。"""
+    """读 rule-ref.txt；缺失或格式不对时回退 default。"""
     try:
         with io.open(REF_FILE, encoding='utf-8') as f:
             v = f.read().strip()
