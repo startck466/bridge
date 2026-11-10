@@ -1,6 +1,6 @@
 # bridge rule set: cloud
 # 国外云服务 / 基础设施
-# count: 44 | generated: 2026-11-09
+# count: 44 | generated: 2026-11-10
 # DO NOT EDIT — 修改请改 scripts/src/cloud.txt 后重新构建
 payload:
   - '+.cloudflare.com'
