@@ -98,40 +98,37 @@ def step_fetch():
     local = os.path.join(DATA, 'direct.txt')
     if not os.path.isdir(DATA):
         os.makedirs(DATA)
-    if os.path.isfile(local):
-        print('  本地已存在 direct.txt，直接沿用')
-        return
-
-    body = None
-    for url in UPSTREAM_MIRRORS:
-        try:
-            st, body = http_get(url, timeout=90)
-            if st == 200 and body:
-                print('  上游通道: %s' % url.split('/')[2])
-                break
-        except Exception as e:
-            print('  通道失败 %s: %s' % (url.split('/')[2], str(e)[:60]))
-            body = None
-    if not body:
-        sys.exit('  所有上游通道均失败')
-
-    tmp = local + '.new'
-    with io.open(tmp, 'wb') as f:
-        f.write(body)
-    n = sum(1 for _ in io.open(tmp, encoding='utf-8', errors='replace'))
     old = 0
     if os.path.isfile(local):
-        old = sum(1 for _ in io.open(local, encoding='utf-8', errors='replace'))
+        with io.open(local, encoding='utf-8', errors='replace') as f:
+            old = sum(1 for _ in f)
 
-    # 行数骤降 20% 以上视为上游异常，保留旧数据
-    if old and n < old * 0.8:
-        print('  !! 上游 %d 行 → %d 行，降幅过大，保留旧数据' % (old, n))
-        os.remove(tmp)
-    else:
-        if os.path.exists(local):
-            os.remove(local)
-        os.rename(tmp, local)
+    for url in UPSTREAM_MIRRORS:
+        host = url.split('/')[2]
+        try:
+            st, body = http_get(url, timeout=90)
+        except Exception as e:
+            print('  通道失败 %s: %s' % (host, str(e)[:60]))
+            continue
+        if st != 200 or not body:
+            continue
+
+        n = len(body.splitlines())
+        if old and n < old * 0.8:
+            print('  !! %s: 上游 %d 行 → %d 行，尝试下一通道' % (host, old, n))
+            continue
+
+        tmp = local + '.new'
+        with io.open(tmp, 'wb') as f:
+            f.write(body)
+        os.replace(tmp, local)
         print('  direct.txt  %d 行（旧 %d，差 %+d）' % (n, old, n - old))
+        return
+
+    if old:
+        print('  !! 所有上游通道均失败或数据量异常，保留旧数据')
+        return
+    sys.exit('  所有上游通道均失败')
 
 
 # ---------------------------------------------------------------- 2. 构建
@@ -154,9 +151,7 @@ def step_export():
     """导出给其它客户端的规则订阅（纯域名，无节点）。"""
     rc, err = run_script('export.py', tail=10)
     if rc != 0:
-        print('  !! 导出失败（不影响规则集，仅 export/ 未更新）：%s' % err[:200])
-        return False
-    return True
+        sys.exit('导出失败：' + err[:200])
 
 
 # ---------------------------------------------------------------- 3. 推送
@@ -396,7 +391,9 @@ def main():
 
     if do_push:
         print('\n[6/6] 推送地址文件')
-        step_push(gh, 'weekly: 规则地址指向 @%s' % (ref or '?')[:12])
+        pushed, _ = step_push(gh, 'weekly: 规则地址指向 @%s' % (ref or '?')[:12])
+        if not pushed:
+            sys.exit('发布失败：无法推送到 GitHub')
     else:
         print('\n[6/6] 跳过推送（--no-push）')
 
@@ -405,6 +402,8 @@ def main():
 
     print('\n结果: %s' % ('全部正常' if ok else '存在失败，需人工检查'))
     print('规则地址: %s' % _ref.rule_base(ref=ref))
+    if not ok:
+        sys.exit(1)
 
 
 if __name__ == '__main__':
