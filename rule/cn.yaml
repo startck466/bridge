@@ -1,6 +1,6 @@
 # bridge rule set: cn
 # 国内域名（全量兜底）
-# count: 109914 | generated: 2026-11-10
+# count: 109914 | generated: 2026-11-12
 # DO NOT EDIT — 修改请改 scripts/src/cn.txt 后重新构建
 payload:
   - '+.0.zone'
