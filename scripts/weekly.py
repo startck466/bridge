@@ -25,6 +25,8 @@
 用法:
     python3 scripts/weekly.py            # 完整流程
     python3 scripts/weekly.py --no-push  # 只本地重建，不推 GitHub
+    python3 scripts/weekly.py --verify-only --skip-purge --budget 120
+                                        # 只读校验22项，不读凭据、不构建、不写入、不推送
 
 GitHub 凭据从 scripts/.hosts.json 读取（已 gitignore，不入库）
 """
@@ -54,7 +56,65 @@ RULES = ['fix-direct', 'fix-proxy', 'ai', 'dev', 'social', 'media',
 # 父进程（charon_weekly）等待本脚本 600 秒。给收尾留余量，
 # 所有网络校验都必须在这个预算内完成；超时只降级为"未完成"，不能把父进程拖死。
 DEFAULT_BUDGET = 480
+VERIFY_RESERVE = 120
+MAX_HTTP_BYTES = 32 * 1024 * 1024
 DEADLINE = 0.0
+
+# socket 超时不是整次读取时限；独立进程让 DNS、TLS 和慢速响应都可终止。
+# 不继承私有凭据，不将异常中的 URL / 代理配置输出到日志。
+HTTP_WORKER = r'''
+import gzip
+import http.client
+import io
+import sys
+import urllib.error
+import urllib.request
+try:
+    request = urllib.request.Request(sys.argv[1], headers={
+        'User-Agent': 'bridge-weekly/1.0', 'Accept-Encoding': 'gzip'})
+    sys.stderr.write('open\n')
+    sys.stderr.flush()
+    with urllib.request.urlopen(request, timeout=float(sys.argv[2])) as response:
+        sys.stderr.write('read\n')
+        sys.stderr.flush()
+        max_bytes = int(sys.argv[3])
+        # HTTPResponse 已按 chunked 优先级解析长度；限长 read 不会自行拒绝提前 EOF。
+        expected_length = getattr(response, 'length', None)
+        if expected_length is not None and expected_length > max_bytes:
+            raise ValueError('http_body_too_large')
+        body = response.read(max_bytes + 1)
+        if len(body) > max_bytes:
+            raise ValueError('http_body_too_large')
+        if expected_length is not None and len(body) != expected_length:
+            raise http.client.IncompleteRead(body, expected_length - len(body))
+        encoding = (response.getheader('Content-Encoding') or 'identity').strip().lower()
+        if encoding == 'gzip':
+            if not body:
+                raise EOFError('empty_gzip_body')
+            # 多读一个字节判定膨胀超限；到 EOF 才确认 CRC、尾部及后续 member 完整。
+            with gzip.GzipFile(fileobj=io.BytesIO(body)) as compressed:
+                body = compressed.read(max_bytes + 1)
+            if len(body) > max_bytes:
+                raise ValueError('http_body_too_large')
+        elif encoding != 'identity':
+            raise ValueError('http_unsupported_encoding')
+        sys.stderr.write('write\n')
+        sys.stderr.flush()
+        sys.stdout.buffer.write(str(response.status).encode('ascii') + b'\n' + body)
+        sys.stderr.write('flush\n')
+        sys.stderr.flush()
+        sys.stdout.buffer.flush()
+        sys.stderr.write('done\n')
+        sys.stderr.flush()
+except urllib.error.HTTPError as exc:
+    sys.stderr.write('http_status_%s' % exc.code)
+    sys.exit(1)
+except Exception as exc:
+    reason = getattr(exc, 'reason', exc)
+    message = str(exc) if str(exc) in ('http_body_too_large', 'http_unsupported_encoding') else type(reason).__name__
+    sys.stderr.write(message)
+    sys.exit(1)
+'''
 
 
 def set_budget(seconds):
@@ -67,23 +127,46 @@ def _remaining():
     return None if not DEADLINE else DEADLINE - time.monotonic()
 
 
-def _cap(timeout):
+def _cap(timeout, reserve=0):
     rem = _remaining()
-    return float(timeout) if rem is None else max(1.0, min(float(timeout), rem))
+    limit = float(timeout) if rem is None else min(float(timeout), rem - reserve)
+    if limit <= 0:
+        raise TimeoutError('weekly_budget_exhausted')
+    return limit
 
 
-def _parallel_map(items, fn, workers=8):
-    """保序并发执行；单项异常留在结果里，由调用方计为失败。"""
-    results = [None] * len(items)
+def _parallel_map(items, fn, workers=8, deadline=None):
+    """保序并发；截止时逐项保留成功结果或明确超时，不等待未启动任务。"""
+    deadline = deadline or DEADLINE or (time.monotonic() + DEFAULT_BUDGET)
+    results = [TimeoutError('weekly_budget_exhausted') for _ in items]
+    if time.monotonic() >= deadline:
+        return results
     pool = ThreadPoolExecutor(max_workers=workers)
+
+    def bounded(item):
+        if time.monotonic() >= deadline:
+            raise TimeoutError('weekly_budget_exhausted')
+        return fn(item)
+
     try:
-        futures = {pool.submit(fn, item): i for i, item in enumerate(items)}
-        for fut in as_completed(futures):
-            index = futures[fut]
-            try:
-                results[index] = fut.result()
-            except Exception as exc:  # noqa: BLE001 - 单项失败不能中断其余项
-                results[index] = exc
+        futures = {pool.submit(bounded, item): i for i, item in enumerate(items)}
+        try:
+            for fut in as_completed(futures, timeout=max(0, deadline - time.monotonic())):
+                index = futures[fut]
+                try:
+                    results[index] = fut.result()
+                except Exception as exc:  # noqa: BLE001 - 单项失败不能中断其余项
+                    results[index] = exc
+        except TimeoutError:
+            pass
+        for fut, index in futures.items():
+            if fut.done() and not fut.cancelled():
+                try:
+                    results[index] = fut.result()
+                except Exception as exc:
+                    results[index] = exc
+            else:
+                fut.cancel()
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
     return results
@@ -127,12 +210,26 @@ def load_conf():
 
 
 def http_get(url, timeout=90):
-    rem = _remaining()
-    if rem is not None and rem <= 1:
-        raise TimeoutError('weekly_budget_exhausted')
-    req = urllib.request.Request(url, headers={'User-Agent': 'bridge-weekly/1.0'})
-    with urllib.request.urlopen(req, timeout=_cap(timeout)) as r:
-        return r.status, r.read()
+    limit = _cap(timeout)
+    # 仅保留运行 Python、系统证书和现有网络通道所需的环境。
+    allowed = {'path', 'systemroot', 'windir', 'temp', 'tmp', 'home', 'userprofile',
+               'ssl_cert_file', 'ssl_cert_dir', 'http_proxy', 'https_proxy',
+               'all_proxy', 'no_proxy'}
+    env = {key: value for key, value in os.environ.items() if key.lower() in allowed}
+    try:
+        result = subprocess.run(
+            [sys.executable, '-I', '-B', '-c', HTTP_WORKER, url, str(limit), str(MAX_HTTP_BYTES)],
+            capture_output=True, timeout=_cap(limit), env=env)
+    except subprocess.TimeoutExpired as exc:
+        stages = (exc.stderr or b'').splitlines()
+        stage = next((item.decode('ascii') for item in reversed(stages)
+                      if item in (b'open', b'read', b'write', b'flush', b'done')), 'open')
+        raise TimeoutError('http_total_timeout:' + stage) from None
+    if result.returncode:
+        reason = (result.stderr.decode('ascii', 'replace').strip() or 'worker_failed').splitlines()[-1]
+        raise OSError('http_request_failed: ' + reason[:80])
+    status, body = result.stdout.split(b'\n', 1)
+    return int(status), body
 
 
 # ---------------------------------------------------------------- 1. 拉上游
@@ -185,8 +282,9 @@ def step_fetch():
 def run_script(name, tail=12, timeout=180):
     try:
         r = subprocess.run([sys.executable, os.path.join(SCRIPTS, name)],
-                           cwd=BASE, capture_output=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
+                           cwd=BASE, capture_output=True,
+                           timeout=_cap(timeout, reserve=VERIFY_RESERVE))
+    except (subprocess.TimeoutExpired, TimeoutError):
         print('  %s 超时（%ss），终止本轮构建' % (name, timeout))
         return 1, 'timeout'
     txt = r.stdout.decode('utf-8', 'replace')
@@ -236,12 +334,15 @@ def ref_reachable(sha, repo, tries=2):
         try:
             st, body = http_get(
                 'https://fastly.jsdelivr.net/gh/%s@%s/rule/cn.yaml' % (repo, sha),
-                timeout=30)
+                timeout=_cap(30, reserve=VERIFY_RESERVE))
             if st == 200 and body[:40].startswith(b'# bridge rule set'):
                 return True
         except Exception:
             pass
         if i < tries - 1:
+            remaining = _remaining()
+            if remaining is not None and remaining <= VERIFY_RESERVE + 5:
+                break
             time.sleep(5)
     return False
 
@@ -253,8 +354,8 @@ def run_git(args, use_proxy=False, timeout=300):
     cmd += args
     try:
         return subprocess.run(cmd, cwd=BASE, capture_output=True,
-                              timeout=timeout, env=git_env())
-    except subprocess.TimeoutExpired:
+                              timeout=_cap(timeout, reserve=VERIFY_RESERVE), env=git_env())
+    except (subprocess.TimeoutExpired, TimeoutError):
         class R(object):
             returncode = 1
             stdout = b''
@@ -311,7 +412,7 @@ def step_push(gh, msg):
 
 
 # ---------------------------------------------------------------- 4. 刷新 + 校验
-def purge_path(repo, rel):
+def purge_path(repo, rel, timeout=20):
     """刷新单条 jsDelivr 缓存。
 
     返回 'ok' / 'throttled' / 'error'。jsDelivr 对同一路径按分钟级节流，
@@ -323,7 +424,7 @@ def purge_path(repo, rel):
     url = 'https://purge.jsdelivr.net/gh/%s@main/%s' % (repo, rel)
     key = '/gh/%s@main/%s' % (repo, rel)
     try:
-        st, body = http_get(url, timeout=20)
+        st, body = http_get(url, timeout=timeout)
         info = (json.loads(body.decode('utf-8', 'replace')).get('paths') or {}).get(key, {})
         return 'throttled' if info.get('throttled') else 'ok'
     except Exception:
@@ -341,45 +442,58 @@ def local_count(name):
     return head.split('count: ')[1].split(' ')[0] if 'count: ' in head else None
 
 
-def step_verify(conf, ref):
+def _verify_request_timeout(path, deadline):
+    try:
+        large = os.path.getsize(path) >= 1024 * 1024
+    except OSError:
+        large = False
+    return _cap(min(60 if large else 30, deadline - time.monotonic()))
+
+
+def step_verify(conf, ref, purge=True):
     """并行校验，并受全局时间预算约束。
 
     直连 jsDelivr 冷启动可能单请求 30s 级；此前 22 条 purge + 22 条校验
     全部串行、无总时限，父进程 600s 到点直接杀掉，连"哪些没校验完"都拿不到。
-    现在每个请求都有短超时，且剩余时间不足时明确降级为未完成（返回 False）。
+    purge 只消耗校验预留以外的时间；22 项共享截止时间和并发队列。
+    逐项输出失败原因，任何失败或未完成都返回 False。
     """
     gh = conf['github']
     main_base = gh['rule_base']                       # @main（公开模板用）
     exp_base = main_base.replace('/rule', '/export')
     pin_base = _ref.rule_base(ref=ref) if ref else main_base
-
     print('  刷新 jsDelivr 缓存（export 与公开模板仍指向 @main）:')
     stat = {'ok': 0, 'throttled': 0, 'error': 0, 'skipped': 0}
     rels = ['rule/%s.yaml' % name for name in RULES] + ['export/%s' % name for name, _ in EXPORTS]
     remaining = _remaining()
-    if remaining is not None and remaining < 60:
+    if not purge or (remaining is not None and remaining <= VERIFY_RESERVE + 20):
         stat['skipped'] = len(rels)
-        print('    跳过：剩余时间不足（固定 ref 的客户端不依赖 purge）')
+        print('    跳过：只读校验或为22项校验预留时间（固定 ref 不依赖 purge）')
     else:
-        for result in _parallel_map(rels, lambda rel: purge_path(gh['repo'], rel)):
+        purge_deadline = time.monotonic() + 20
+        if DEADLINE:
+            purge_deadline = min(purge_deadline, DEADLINE - VERIFY_RESERVE)
+        for result in _parallel_map(
+                rels, lambda rel: purge_path(gh['repo'], rel,
+                                             timeout=purge_deadline - time.monotonic()),
+                deadline=purge_deadline):
             stat['skipped' if isinstance(result, Exception) else result] += 1
-        print('    成功 %d  被节流 %d  失败 %d' % (stat['ok'], stat['throttled'], stat['error']))
+        print('    成功 %d  被节流 %d  失败 %d  未完成 %d' % (
+            stat['ok'], stat['throttled'], stat['error'], stat['skipped']))
         if stat['throttled']:
             print('    !! 有路径被节流，@main 上可能仍是旧内容（不影响已固定 ref 的客户端）')
 
+    verify_deadline = time.monotonic() + VERIFY_RESERVE
+    if DEADLINE:
+        verify_deadline = min(verify_deadline, DEADLINE)
     ok = bad = 0
-
-    remaining = _remaining()
-    if remaining is not None and remaining < 15:
-        skipped = len(RULES) + len(EXPORTS)
-        print('    跳过剩余校验：时间预算用尽（未完成 %d 项）' % skipped)
-        print('  校验: 成功 0 / 失败 %d（预算用尽）' % skipped)
-        return False
 
     print('  客户端实际拉取的地址（固定 ref）: %s' % pin_base)
 
     def check_rule(name):
-        st, body = http_get('%s/%s.yaml' % (pin_base, name), timeout=30)
+        st, body = http_get('%s/%s.yaml' % (pin_base, name),
+                            timeout=_verify_request_timeout(
+                                os.path.join(RULE, name + '.yaml'), verify_deadline))
         head = body[:200].decode('utf-8', 'replace')
         good = (st == 200 and head.startswith('# bridge rule set'))
         n = head.split('count: ')[1].split(' ')[0] if 'count: ' in head else '?'
@@ -390,28 +504,47 @@ def step_verify(conf, ref):
             good = False
         return good, '    %-12s HTTP=%s  %7s B  count=%s  %s' % (name, st, len(body), n, note)
 
-    for name, result in zip(RULES, _parallel_map(RULES, check_rule)):
-        if isinstance(result, Exception):
-            print('    %-12s 失败 %s' % (name, str(result)[:60]))
-            bad += 1
-        else:
-            good, line = result
-            print(line)
-            ok += 1 if good else 0
-            bad += 0 if good else 1
-
-    print('  导出文件校验（@main）:')
-
     def check_export(item):
         name, first = item
-        st, body = http_get('%s/%s' % (exp_base, name), timeout=30)
+        st, body = http_get('%s/%s' % (exp_base, name),
+                            timeout=_verify_request_timeout(
+                                os.path.join(BASE, 'export', name), verify_deadline))
         good = (st == 200 and body.startswith(first) and len(body) > 100)
         return good, '    %-24s HTTP=%s  %9s B  %s' % (
             name, st, len(body), 'OK' if good else '<<< 内容异常')
 
-    for (name, _), result in zip(EXPORTS, _parallel_map(EXPORTS, check_export)):
+    checks = [('rule', name) for name in RULES] + [('export', item) for item in EXPORTS]
+    results = _parallel_map(
+        checks, lambda item: check_rule(item[1]) if item[0] == 'rule' else check_export(item[1]),
+        deadline=verify_deadline)
+    # 仅恢复瞬时传输失败；内容、CRC、截断等错误绝不重试。
+    transient = ('http_total_timeout:', 'http_request_failed: TimeoutError',
+                 'http_request_failed: ConnectionResetError',
+                 'http_request_failed: ConnectionAbortedError')
+    retry_indices = [i for i, result in enumerate(results)
+                     if isinstance(result, (TimeoutError, OSError))
+                     and str(result).startswith(transient)]
+    if retry_indices and verify_deadline - time.monotonic() >= 5:
+        retry_checks = [checks[i] for i in retry_indices]
+        print('  瞬时传输失败最多重试一次：%d项（仍受本轮截止时间限制）' % len(retry_checks))
+        retries = _parallel_map(
+            retry_checks,
+            lambda item: check_rule(item[1]) if item[0] == 'rule' else check_export(item[1]),
+            deadline=verify_deadline)
+        for index, result in zip(retry_indices, retries):
+            previous = results[index]
+            results[index] = result
+            label = checks[index][1]
+            label = label if isinstance(label, str) else label[0]
+            recovered = not isinstance(result, Exception) and result[0]
+            print('    重试 %s: 首次=%s；最终=%s' % (
+                label, str(previous)[:80], '恢复并完整校验通过' if recovered else '仍失败'))
+    for (kind, item), result in zip(checks, results):
+        name = item if kind == 'rule' else item[0]
+        if kind == 'export' and item == EXPORTS[0]:
+            print('  导出文件校验（@main）:')
         if isinstance(result, Exception):
-            print('    %-24s 失败 %s' % (name, str(result)[:60]))
+            print('    %-24s 失败 %s' % (name, str(result)[:80]))
             bad += 1
         else:
             good, line = result
@@ -438,7 +571,24 @@ def main():
         budget = int(budget)
     except (TypeError, ValueError):
         budget = DEFAULT_BUDGET
+    if budget <= 0:
+        print('预算必须是正整数')
+        return 2
     set_budget(budget)
+
+    if '--verify-only' in sys.argv:
+        # 与 charon_weekly.run_bridge 的 HTTP 环境一致，避免手动验收走残留代理。
+        # 仅改变当前进程；不修改系统代理，也不影响独立的 Git 显式代理。
+        for key in list(os.environ):
+            if key.lower() in ('http_proxy', 'https_proxy', 'all_proxy', 'no_proxy'):
+                os.environ.pop(key, None)
+        os.environ['NO_PROXY'] = '*'
+        print('  HTTP验收路径: 直连（与正式周检一致；系统代理未修改）')
+        # 公开坐标由 _ref 提供；不加载 .hosts.json 或保险库环境中的凭据。
+        conf = {'github': {'repo': '%s/%s' % (_ref.USER, _ref.REPO),
+                           'rule_base': _ref.rule_base(ref='main')}}
+        ok = step_verify(conf, _ref.read_ref(), purge='--skip-purge' not in sys.argv)
+        return 0 if ok else 1
 
     conf = load_conf()
     gh = conf['github']
@@ -457,7 +607,8 @@ def main():
     step_build()
 
     print('\n[3/6] 导出通用规则订阅（不含节点）')
-    step_export()
+    export_ok = step_export()
+    publish_ok = True
     print('  [构建+导出 %.1fs]' % (time.monotonic() - stage))
 
     ref = _ref.RULE_REF
@@ -465,6 +616,7 @@ def main():
         print('\n[4/6] 推送规则到 GitHub')
         stage = time.monotonic()
         pushed, sha = step_push(gh, 'weekly: 规则更新 %s' % datetime.date.today().isoformat())
+        publish_ok = pushed
         print('  [推送 %.1fs]' % (time.monotonic() - stage))
         print('\n[5/6] 把规则地址固定到本次提交')
         # 判定只认"CDN 上真的读得到这个 commit"——它同时证明了推送成功、
@@ -477,15 +629,17 @@ def main():
             except ValueError as e:
                 changed = False
                 print('  !! 写入 ref 失败：%s' % e)
+                publish_ok = False
             if changed:
                 ref = sha
                 print('  rule-ref.txt → %s，按新地址重建' % sha[:12])
                 step_build()
-                step_export()
+                export_ok = step_export() and export_ok
             else:
                 ref = _ref.read_ref()
                 print('  ref 无变化（%s）' % (ref or '?')[:12])
         else:
+            publish_ok = False
             ref = _ref.read_ref()
             print('  !! 本次提交在 CDN 上还读不到，ref 保持不动（%s）' % (ref or '?')[:12])
             print('     客户端不受影响，继续用旧地址；脚本下次运行会再试')
@@ -497,7 +651,8 @@ def main():
     if do_push:
         print('\n[6/6] 推送地址文件')
         stage = time.monotonic()
-        step_push(gh, 'weekly: 规则地址指向 @%s' % (ref or '?')[:12])
+        pushed, _ = step_push(gh, 'weekly: 规则地址指向 @%s' % (ref or '?')[:12])
+        publish_ok = pushed and publish_ok
         print('  [推送地址文件 %.1fs]' % (time.monotonic() - stage))
     else:
         print('\n[6/6] 跳过推送（--no-push）')
@@ -509,9 +664,11 @@ def main():
         time.monotonic() - stage,
         '不限' if _remaining() is None else '%.0fs' % _remaining()))
 
+    ok = ok and export_ok and publish_ok
     print('\n结果: %s' % ('全部正常' if ok else '存在失败，需人工检查'))
     print('规则地址: %s' % _ref.rule_base(ref=ref))
+    return 0 if ok else 1
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
