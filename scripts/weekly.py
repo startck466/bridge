@@ -19,7 +19,7 @@
 
 **节点与私有订阅完全不在这里**
 本仓库公开，只放规则。带节点的私有订阅由本机 `../bridge-private/` 下的
-私有脚本生成并下发到自有服务器，凭据只存在 `scripts/.hosts.json`（已 gitignore）。
+私有脚本生成并下发到自有服务器，所需凭据由保险库提供。
 本脚本不引用、不调用任何私有发布逻辑，仓库里也没有订阅地址、令牌或节点。
 
 用法:
@@ -28,9 +28,10 @@
     python3 scripts/weekly.py --verify-only --skip-purge --budget 120
                                         # 只读校验22项，不读凭据、不构建、不写入、不推送
 
-GitHub 凭据从 scripts/.hosts.json 读取（已 gitignore，不入库）
+GitHub 凭据由上游巡检从保险库临时传入
 """
 
+import base64
 import io
 import json
 import os
@@ -43,7 +44,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(BASE, 'scripts')
-CONF = os.path.join(SCRIPTS, '.hosts.json')
 DATA = os.path.join(BASE, 'scripts', 'data')
 RULE = os.path.join(BASE, 'rule')
 
@@ -204,9 +204,7 @@ def load_conf():
     raw = os.environ.get('BRIDGE_HOSTS_JSON')
     if raw:
         return json.loads(raw)
-    if not os.path.isfile(CONF):
-        sys.exit('缺少 %s（含 GitHub 凭据）' % CONF)
-    return json.load(io.open(CONF, encoding='utf-8'))
+    sys.exit('缺少来自保险库的运行时规则库配置')
 
 
 def http_get(url, timeout=90):
@@ -347,14 +345,23 @@ def ref_reachable(sha, repo, tries=2):
     return False
 
 
-def run_git(args, use_proxy=False, timeout=300):
+def run_git(args, use_proxy=False, timeout=300, auth_header=None):
     cmd = ['git']
     if use_proxy:
         cmd += ['-c', 'http.proxy=' + GIT_PROXY, '-c', 'https.proxy=' + GIT_PROXY]
+    env = git_env()
+    for key in list(env):
+        if key.upper() in {'BRIDGE_HOSTS_JSON', 'CF_TOKEN', 'GITHUB_TOKEN', 'GIT_CURL_VERBOSE'} or key.upper().startswith('GIT_TRACE'):
+            env.pop(key, None)
+    if auth_header:
+        cmd += ['-c', 'credential.helper=', '-c', 'http.extraHeader=',
+                '--config-env=http.https://github.com/.extraHeader=BRIDGE_GIT_AUTH']
+        env['BRIDGE_GIT_AUTH'] = auth_header
+        env['GIT_TERMINAL_PROMPT'] = '0'
     cmd += args
     try:
         return subprocess.run(cmd, cwd=BASE, capture_output=True,
-                              timeout=_cap(timeout, reserve=VERIFY_RESERVE), env=git_env())
+                              timeout=_cap(timeout, reserve=VERIFY_RESERVE), env=env)
     except (subprocess.TimeoutExpired, TimeoutError):
         class R(object):
             returncode = 1
@@ -395,16 +402,19 @@ def step_push(gh, msg):
                 return False, git_sha(full=True)
 
     sha = git_sha(full=True)
-    tok = gh.get('token') or ''
-    url = 'https://%s:%s@github.com/%s.git' % (gh['user'], tok, repo)
-
-    r = run_git(['push', url, 'HEAD:main'], use_proxy=True, timeout=240)
+    tok = gh.get('token')
+    if not tok or not gh.get('user'):
+        return False, sha
+    url = 'https://github.com/%s.git' % repo
+    encoded = base64.b64encode(('%s:%s' % (gh['user'], tok)).encode('utf-8')).decode('ascii')
+    auth = 'Authorization: Basic ' + encoded
+    r = run_git(['push', url, 'HEAD:main'], use_proxy=True, timeout=240, auth_header=auth)
     if r.returncode != 0:
         # 代理挂了就试直连（出国网络恰好可用时）
-        r2 = run_git(['push', url, 'HEAD:main'], timeout=90)
+        r2 = run_git(['push', url, 'HEAD:main'], timeout=90, auth_header=auth)
         if r2.returncode != 0:
-            err = (r.stderr or b'').decode('utf-8', 'replace').replace(tok, '***')
-            err2 = (r2.stderr or b'').decode('utf-8', 'replace').replace(tok, '***')
+            err = (r.stderr or b'').decode('utf-8', 'replace').replace(tok, '***').replace(encoded, '***')
+            err2 = (r2.stderr or b'').decode('utf-8', 'replace').replace(tok, '***').replace(encoded, '***')
             print('  推送失败：', (err.strip()[-200:] or err2.strip()[-200:]))
             return False, sha
     print('  已推送 %s  (%s)' % (repo, (sha or '')[:12]))
